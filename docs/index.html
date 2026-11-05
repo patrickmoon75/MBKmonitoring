@@ -26,7 +26,7 @@
       font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', -apple-system, sans-serif;
     }
     .container {
-      max-width: 1120px;
+      max-width: 1140px;
       margin: 0 auto;
     }
     .header {
@@ -58,24 +58,36 @@
     .btn {
       border: none;
       border-radius: 8px;
-      padding: 9px 14px;
+      padding: 8px 13px;
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
       transition: 0.15s;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       text-decoration: none;
     }
     .btn-white { background: #fff; color: var(--primary); }
     .btn-white:hover { background: #eff6ff; }
     .btn-primary { background: var(--primary-light); color: #fff; }
     .btn-primary:hover { background: #1d4ed8; }
+    .btn-outline { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+    .btn-outline:hover { background: #e5e7eb; }
     .btn-success { background: var(--success); color: #fff; }
     .btn-success:hover { background: #047857; }
     .btn-danger { background: var(--danger-bg); color: var(--danger); }
     .btn-danger:hover { background: #fecaca; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    @media (max-width: 860px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
 
     .panel {
       background: var(--card);
@@ -84,6 +96,9 @@
       margin-top: 16px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.05);
       border: 1px solid var(--border);
+    }
+    .grid-2 .panel {
+      margin-top: 0;
     }
     .panel-title {
       font-size: 15px;
@@ -114,6 +129,11 @@
       background: #fef2f2;
       color: #991b1b;
     }
+    .kw-chip.site {
+      background: #ecfdf5;
+      color: #065f46;
+      border: 1px solid #a7f3d0;
+    }
     .kw-chip button {
       border: none;
       background: none;
@@ -126,15 +146,14 @@
     }
     .kw-input-group {
       display: inline-flex;
+      flex-wrap: wrap;
       gap: 6px;
-      margin-left: 6px;
     }
     .kw-input {
-      padding: 5px 10px;
+      padding: 6px 10px;
       border: 1px solid #d1d5db;
       border-radius: 6px;
       font-size: 13px;
-      width: 140px;
     }
 
     .filters {
@@ -189,7 +208,7 @@
       padding: 13px 10px;
       border-bottom: 1px solid var(--border);
       font-size: 14px;
-      vertical-align: middle;
+      vertical-align: top;
     }
     tr:hover td {
       background: #f8fafc;
@@ -214,6 +233,20 @@
     .title-link:hover {
       color: var(--primary-light);
       text-decoration: underline;
+    }
+    .summary-box {
+      display: none;
+      margin-top: 10px;
+      padding: 11px 14px;
+      background: #f8fafc;
+      border-left: 3px solid var(--primary-light);
+      border-radius: 6px;
+      font-size: 13px;
+      color: #374151;
+      line-height: 1.6;
+    }
+    .summary-box.open {
+      display: block;
     }
     .toast {
       position: fixed;
@@ -279,21 +312,37 @@
     </div>
 
     <div class="sync-banner" id="unsavedBanner">
-      <span>⚠️ 삭제하거나 변경한 키워드가 있습니다. 우측 버튼을 누르면 GitHub 서버 파일에도 영구 반영됩니다.</span>
+      <span>⚠️ 변경된 설정(공고 삭제 / 키워드 / 검색 사이트)이 있습니다. 우측 버튼을 누르면 GitHub 서버에 영구 반영됩니다.</span>
       <button class="btn btn-success" onclick="syncToGitHub()">☁️ 서버에 저장하기</button>
     </div>
 
-    <!-- 키워드 관리 패널 -->
-    <div class="panel">
-      <div class="panel-title">
-        <span>🎯 모니터링 키워드 관리 (추가/삭제 후 서버 저장 가능)</span>
-        <span style="font-size:12px;color:var(--muted);font-weight:400;">포함 키워드(파란색) / 제외 키워드(빨간색)</span>
+    <div class="grid-2">
+      <!-- 1. 키워드 관리 패널 -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>🎯 모니터링 키워드 관리</span>
+          <span style="font-size:12px;color:var(--muted);font-weight:400;">포함(파란색) / 제외(빨간색)</span>
+        </div>
+        <div class="kw-list" id="keywordContainer"></div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);" class="kw-list" id="excludeContainer"></div>
       </div>
-      <div class="kw-list" id="keywordContainer"></div>
-      <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);" class="kw-list" id="excludeContainer"></div>
+
+      <!-- 2. 검색 사이트 추가/관리 패널 -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>🌐 모니터링 검색 사이트 관리</span>
+          <span style="font-size:12px;color:var(--muted);font-weight:400;">원하는 기관 게시판 URL 추가 가능</span>
+        </div>
+        <div class="kw-list" id="siteContainer" style="margin-bottom:10px;"></div>
+        <div style="padding-top:10px;border-top:1px dashed var(--border);display:flex;flex-wrap:wrap;gap:6px;">
+          <input type="text" id="newSiteName" class="kw-input" style="width:135px;" placeholder="기관명 (예: NIPA)" />
+          <input type="url" id="newSiteUrl" class="kw-input" style="flex:1;min-width:180px;" placeholder="게시판 주소 (https://...)" onkeydown="if(event.key==='Enter') addCustomSite()" />
+          <button class="btn btn-primary" style="padding:6px 12px;font-size:12px;" onclick="addCustomSite()">+ 사이트 추가</button>
+        </div>
+      </div>
     </div>
 
-    <!-- 지원사업 목록 패널 -->
+    <!-- 3. 지원사업 목록 패널 -->
     <div class="panel">
       <div class="filters">
         <div class="filter-tabs" id="siteTabs">
@@ -304,16 +353,16 @@
           <button class="tab" onclick="setSiteFilter('한국콘텐츠진흥원(KOCCA)')">한국콘텐츠진흥원</button>
           <button class="tab" onclick="setSiteFilter('DELETED')" style="color:#dc2626;">🗑️ 삭제(제외)함</button>
         </div>
-        <input type="text" class="search-input" id="searchInput" placeholder="공고명 또는 키워드 검색..." oninput="renderTable()" />
+        <input type="text" class="search-input" id="searchInput" placeholder="공고명, 기관명, 키워드 검색..." oninput="renderTable()" />
       </div>
 
       <table>
         <thead>
           <tr>
             <th style="width:150px;">출처 / 기관</th>
-            <th>지원사업 공고명</th>
-            <th style="width:170px;">접수기간 / 등록일</th>
-            <th style="width:165px;text-align:center;">관리</th>
+            <th>지원사업 공고명 ('📄 개요' 클릭 시 내용 확장)</th>
+            <th style="width:160px;">접수기간 / 등록일</th>
+            <th style="width:235px;text-align:center;">개요 / 원문 / 삭제</th>
           </tr>
         </thead>
         <tbody id="tableBody"></tbody>
@@ -326,8 +375,8 @@
     <div class="modal">
       <h3 style="margin:0 0 10px 0;font-size:17px;">🔑 GitHub 서버 동기화 토큰 설정</h3>
       <p style="font-size:13px;color:#4b5563;line-height:1.5;margin-bottom:14px;">
-        웹에서 삭제한 공고와 추가한 키워드를 GitHub 서버 파일(<code>data.json</code>, <code>config.json</code>)에 직접 저장하려면 GitHub Personal Access Token(Fine-grained 또는 Classic <code>repo</code> 권한)을 1회 입력해 주세요.<br>
-        <small style="color:#6b7280;">* 입력한 토큰은 서버로 전송되지 않고 현재 브라우저(localStorage)에만 안전하게 보관됩니다.</small>
+        웹에서 삭제한 공고, 추가한 키워드 및 검색 사이트를 GitHub 서버 파일(<code>data.json</code>, <code>config.json</code>)에 직접 저장하려면 GitHub Personal Access Token(Classic <code>repo</code> 권한)을 1회 입력해 주세요.<br>
+        <small style="color:#6b7280;">* 입력한 토큰은 외부로 전송되지 않고 현재 브라우저(localStorage)에만 안전하게 보관됩니다.</small>
       </p>
       <div style="margin-bottom:12px;">
         <a href="https://github.com/settings/tokens/new?description=MBKmonitoring-Dashboard&scopes=repo" target="_blank" style="font-size:12px;color:#2563eb;font-weight:600;">
@@ -353,9 +402,15 @@
       items: [],
       deleted_ids: [],
       keywords: ["AI", "인공지능", "AX", "로봇", "창업", "벤처", "스타트업"],
-      exclude_keywords: ["어업용", "일반음식점"]
+      exclude_keywords: ["어업용", "일반음식점"],
+      sites: {
+        kstartup: { enabled: true, name: "K-Startup", url: "https://www.k-startup.go.kr/" },
+        bizinfo: { enabled: true, name: "기업마당", url: "https://www.bizinfo.go.kr/" },
+        egbiz: { enabled: true, name: "경기기업비서", url: "https://www.egbiz.or.kr/" },
+        kocca: { enabled: true, name: "한국콘텐츠진흥원", url: "https://www.kocca.kr/" }
+      },
+      custom_sites: []
     };
-    let deletedItemsBackup = [];
     let currentSiteFilter = "ALL";
     let hasUnsavedChanges = false;
 
@@ -370,10 +425,10 @@
       hasUnsavedChanges = true;
       document.getElementById("unsavedBanner").style.display = "flex";
       document.getElementById("syncBtn").style.display = "inline-flex";
-      // 로컬 스토리지에도 즉시 백업
       localStorage.setItem("mbk_local_deleted_ids", JSON.stringify(serverData.deleted_ids));
       localStorage.setItem("mbk_local_keywords", JSON.stringify(serverData.keywords));
       localStorage.setItem("mbk_local_exclude_keywords", JSON.stringify(serverData.exclude_keywords));
+      localStorage.setItem("mbk_local_custom_sites", JSON.stringify(serverData.custom_sites));
     }
 
     async function loadData() {
@@ -386,20 +441,23 @@
           serverData.deleted_ids = json.deleted_ids || [];
           if (json.keywords) serverData.keywords = json.keywords;
           if (json.exclude_keywords) serverData.exclude_keywords = json.exclude_keywords;
+          if (json.sites) serverData.sites = json.sites;
+          if (json.custom_sites) serverData.custom_sites = json.custom_sites.filter(s => s.enabled !== false);
         }
       } catch (e) {
         console.warn("data.json 로드 실패:", e);
       }
 
-      // 브라우저 로컬 삭제 내역 병합
       const localDel = JSON.parse(localStorage.getItem("mbk_local_deleted_ids") || "[]");
       localDel.forEach(id => {
-        if (!serverData.deleted_ids.includes(id)) {
-          serverData.deleted_ids.push(id);
-        }
+        if (!serverData.deleted_ids.includes(id)) serverData.deleted_ids.push(id);
       });
 
-      // URL 파라미터(?delete=공고ID) 처리 (이메일에서 [삭제(제외)] 클릭 시)
+      const localCustomSites = JSON.parse(localStorage.getItem("mbk_local_custom_sites") || "null");
+      if (localCustomSites && localCustomSites.length > serverData.custom_sites.length) {
+        serverData.custom_sites = localCustomSites;
+      }
+
       const params = new URLSearchParams(window.location.search);
       const deleteId = params.get("delete");
       if (deleteId) {
@@ -408,6 +466,7 @@
       }
 
       renderKeywords();
+      renderSites();
       renderTable();
       updateHeaderStatus();
     }
@@ -431,7 +490,7 @@
       const addGroup = document.createElement("div");
       addGroup.className = "kw-input-group";
       addGroup.innerHTML = `
-        <input type="text" id="newKwInput" class="kw-input" placeholder="+ 새 키워드 입력" onkeydown="if(event.key==='Enter') addKeyword()" />
+        <input type="text" id="newKwInput" class="kw-input" style="width:120px;" placeholder="+ 새 키워드" onkeydown="if(event.key==='Enter') addKeyword()" />
         <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="addKeyword()">추가</button>
       `;
       kwBox.appendChild(addGroup);
@@ -447,10 +506,83 @@
       const exAddGroup = document.createElement("div");
       exAddGroup.className = "kw-input-group";
       exAddGroup.innerHTML = `
-        <input type="text" id="newExInput" class="kw-input" placeholder="+ 제외 단어 입력" onkeydown="if(event.key==='Enter') addExcludeKeyword()" />
+        <input type="text" id="newExInput" class="kw-input" style="width:120px;" placeholder="+ 제외 단어" onkeydown="if(event.key==='Enter') addExcludeKeyword()" />
         <button class="btn btn-danger" style="padding:5px 10px;font-size:12px;" onclick="addExcludeKeyword()">제외 추가</button>
       `;
       exBox.appendChild(exAddGroup);
+    }
+
+    function renderSites() {
+      const box = document.getElementById("siteContainer");
+      box.innerHTML = "";
+
+      // 기본 4개 사이트 표시
+      const defaultNames = [
+        { label: "K-Startup", url: "https://www.k-startup.go.kr/" },
+        { label: "기업마당", url: "https://www.bizinfo.go.kr/" },
+        { label: "경기기업비서", url: "https://www.egbiz.or.kr/" },
+        { label: "한국콘텐츠진흥원", url: "https://www.kocca.kr/" }
+      ];
+      defaultNames.forEach(s => {
+        const span = document.createElement("span");
+        span.className = "kw-chip site";
+        span.innerHTML = `✅ <a href="${s.url}" target="_blank" style="color:inherit;text-decoration:none;">${s.label}</a>`;
+        box.appendChild(span);
+      });
+
+      // 사용자가 추가한 커스텀 사이트 표시
+      (serverData.custom_sites || []).forEach((s, idx) => {
+        if (s.enabled === false) return;
+        const span = document.createElement("span");
+        span.className = "kw-chip site";
+        span.innerHTML = `🌐 <a href="${s.list_url}" target="_blank" style="color:inherit;text-decoration:none;">${s.name}</a> <button onclick="removeCustomSite(${idx})" title="사이트 삭제">×</button>`;
+        box.appendChild(span);
+      });
+    }
+
+    function addCustomSite() {
+      const nameInp = document.getElementById("newSiteName");
+      const urlInp = document.getElementById("newSiteUrl");
+      const name = nameInp.value.trim();
+      const url = urlInp.value.trim();
+
+      if (!name || !url) {
+        showToast("⚠️ 추가할 사이트의 기관명과 게시판 주소(URL)를 모두 입력해 주세요.");
+        return;
+      }
+      if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        showToast("⚠️ 주소는 https:// 또는 http:// 로 시작해야 합니다.");
+        return;
+      }
+
+      let originUrl = url;
+      try { originUrl = new URL(url).origin; } catch (e) {}
+
+      serverData.custom_sites.push({
+        enabled: true,
+        name: name,
+        list_url: url,
+        base_url: originUrl
+      });
+
+      nameInp.value = "";
+      urlInp.value = "";
+      markChanged();
+      renderSites();
+      showToast(`🌐 '${name}' 사이트가 모니터링 목록에 추가되었습니다!`);
+      if (localStorage.getItem("mbk_github_token")) {
+        syncToGitHub(true);
+      }
+    }
+
+    function removeCustomSite(idx) {
+      const removed = serverData.custom_sites.splice(idx, 1);
+      markChanged();
+      renderSites();
+      showToast(`'${removed[0]?.name || '사이트'}'가 목록에서 제거되었습니다.`);
+      if (localStorage.getItem("mbk_github_token")) {
+        syncToGitHub(true);
+      }
     }
 
     function addKeyword() {
@@ -501,20 +633,25 @@
       renderTable();
     }
 
+    function toggleSummary(id) {
+      const box = document.getElementById("sum_" + id);
+      const btn = document.getElementById("sumbtn_" + id);
+      if (!box) return;
+      const isOpen = box.classList.toggle("open");
+      if (btn) {
+        btn.innerHTML = isOpen ? "📄 개요 닫기 ▲" : "📄 개요 ▼";
+      }
+    }
+
     function deleteItem(id, fromEmail = false) {
       if (!serverData.deleted_ids.includes(id)) {
         serverData.deleted_ids.push(id);
-      }
-      const found = serverData.items.find(i => i.id === id);
-      if (found && !deletedItemsBackup.some(i => i.id === id)) {
-        deletedItemsBackup.push(found);
       }
       markChanged();
       renderTable();
       updateHeaderStatus();
       showToast(fromEmail ? "🗑️ 이메일에서 선택한 공고를 제외 처리했습니다. [서버에 저장하기]를 누르면 영구 반영됩니다." : "🗑️ 해당 공고를 목록에서 삭제(제외)했습니다.");
 
-      // 토큰이 이미 설정되어 있으면 자동으로 GitHub 서버에도 동기화 시도
       if (localStorage.getItem("mbk_github_token")) {
         syncToGitHub(true);
       }
@@ -529,6 +666,10 @@
       if (localStorage.getItem("mbk_github_token")) {
         syncToGitHub(true);
       }
+    }
+
+    function escapeHtml(str) {
+      return (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
 
     function renderTable() {
@@ -549,6 +690,7 @@
         list = list.filter(item =>
           (item.title || "").toLowerCase().includes(q) ||
           (item.agency || "").toLowerCase().includes(q) ||
+          (item.summary || "").toLowerCase().includes(q) ||
           (item.matched_keywords || []).some(k => k.toLowerCase().includes(q))
         );
       }
@@ -565,27 +707,35 @@
       }
 
       tbody.innerHTML = list.map(item => {
-        const badges = (item.matched_keywords || []).map(k => `<span class="badge">#${k}</span>`).join("");
+        const badges = (item.matched_keywords || []).map(k => `<span class="badge">#${escapeHtml(k)}</span>`).join("");
         const isDeleted = serverData.deleted_ids.includes(item.id);
+        const safeId = item.id.replace(/[^A-Za-z0-9_-]/g, "_");
+        const summaryText = escapeHtml(item.summary || "상세 내용은 [공고 보기]를 눌러 원문에서 확인해 주세요.");
+
         const actionBtn = isDeleted
           ? `<button class="btn btn-primary" style="padding:6px 10px;font-size:12px;" onclick="restoreItem('${item.id}')">♻️ 복구</button>`
-          : `<button class="btn btn-danger" style="padding:6px 10px;font-size:12px;" onclick="deleteItem('${item.id}')">🗑️ 삭제(제외)</button>`;
+          : `<button class="btn btn-danger" style="padding:6px 10px;font-size:12px;" onclick="deleteItem('${item.id}')">🗑️ 삭제</button>`;
 
         return `
           <tr>
             <td>
-              <strong>${item.site}</strong><br>
-              <span style="font-size:12px;color:var(--muted);">${item.agency || ''}</span>
+              <strong>${escapeHtml(item.site)}</strong><br>
+              <span style="font-size:12px;color:var(--muted);">${escapeHtml(item.agency || '')}</span>
             </td>
             <td>
               <div>${badges}</div>
-              <a href="${item.url}" target="_blank" class="title-link">${item.title}</a>
+              <a href="${item.url}" target="_blank" class="title-link">${escapeHtml(item.title)}</a>
+              <div id="sum_${safeId}" class="summary-box">
+                <strong>📌 공고 개요 요약</strong><br>
+                ${summaryText}
+              </div>
             </td>
             <td style="font-size:13px;color:#374151;white-space:nowrap;">
-              ${item.period || item.reg_date || '-'}
+              ${escapeHtml(item.period || item.reg_date || '-')}
             </td>
             <td style="text-align:center;white-space:nowrap;">
-              <a href="${item.url}" target="_blank" class="btn btn-primary" style="padding:6px 10px;font-size:12px;margin-right:4px;">공고 보기</a>
+              <button id="sumbtn_${safeId}" class="btn btn-outline" style="padding:6px 10px;font-size:12px;margin-right:3px;" onclick="toggleSummary('${safeId}')">📄 개요 ▼</button>
+              <a href="${item.url}" target="_blank" class="btn btn-primary" style="padding:6px 10px;font-size:12px;margin-right:3px;">공고 보기</a>
               ${actionBtn}
             </td>
           </tr>
@@ -659,28 +809,29 @@
       try {
         if (!silent) showToast("☁️ GitHub 서버에 변경사항을 저장하는 중...");
 
-        // 1. docs/data.json 업데이트 (삭제된 항목 제거 및 deleted_ids 기록)
         const filteredItems = serverData.items.filter(i => !serverData.deleted_ids.includes(i.id));
         const updatedDataJson = {
           updated_at: new Date().toISOString().replace("T", " ").substring(0, 19),
           keywords: serverData.keywords,
           exclude_keywords: serverData.exclude_keywords,
+          sites: serverData.sites,
+          custom_sites: serverData.custom_sites,
           deleted_ids: serverData.deleted_ids,
           items: filteredItems
         };
-        await updateGitHubFile("docs/data.json", updatedDataJson, token, "chore: sync deleted items and keywords from web dashboard [skip ci]");
+        await updateGitHubFile("docs/data.json", updatedDataJson, token, "chore: sync dashboard data [skip ci]");
 
-        // 2. config.json 키워드 동기화
         await updateGitHubFile("config.json", (existingCfg) => {
           existingCfg.keywords = serverData.keywords;
           existingCfg.exclude_keywords = serverData.exclude_keywords;
+          existingCfg.custom_sites = serverData.custom_sites;
           return existingCfg;
-        }, token, "chore: update keywords in config.json from web dashboard [skip ci]");
+        }, token, "chore: sync config.json from web dashboard [skip ci]");
 
         hasUnsavedChanges = false;
         document.getElementById("unsavedBanner").style.display = "none";
         document.getElementById("syncBtn").style.display = "none";
-        showToast("✅ 서버(GitHub)에 삭제 내역 및 키워드가 완벽히 반영되었습니다!");
+        showToast("✅ 서버(GitHub)에 삭제 내역, 키워드, 추가 사이트가 완벽히 반영되었습니다!");
       } catch (err) {
         console.error(err);
         showToast("❌ 서버 저장 실패: 토큰 권한을 확인해 주세요.");

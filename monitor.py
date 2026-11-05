@@ -1,5 +1,7 @@
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import datetime
+import html as html_lib
 import json
 import os
 import re
@@ -24,7 +26,6 @@ REPORT_PATH = BASE_DIR / "latest_report.html"
 
 DASHBOARD_URL = "https://patrickmoon75.github.io/MBKmonitoring/"
 
-# SSL 인증서 오류 방지 컨텍스트 (일부 공공기관 사이트 대응)
 SSL_CTX = ssl.create_default_context()
 SSL_CTX.check_hostname = False
 SSL_CTX.verify_mode = ssl.CERT_NONE
@@ -37,21 +38,24 @@ HEADERS = {
 }
 
 
-def fetch_text(url: str, data: bytes = None, extra_headers: Dict[str, str] = None) -> str:
+def fetch_text(url: str, data: bytes = None, extra_headers: Dict[str, str] = None, timeout: int = 15) -> str:
     """지정한 URL에서 HTML 또는 JSON 텍스트를 가져옵니다."""
     headers = dict(HEADERS)
     if extra_headers:
         headers.update(extra_headers)
     req = urllib.request.Request(url, data=data, headers=headers)
-    with urllib.request.urlopen(req, context=SSL_CTX, timeout=20) as resp:
-        return resp.read().decode("utf-8", errors="ignore")
+    with urllib.request.urlopen(req, context=SSL_CTX, timeout=timeout) as resp:
+        raw = resp.read()
+        for enc in ("utf-8", "euc-kr", "cp949"):
+            try:
+                return raw.decode(enc)
+            except UnicodeDecodeError:
+                continue
+        return raw.decode("utf-8", errors="ignore")
 
 
 def match_keywords(text: str, keywords: List[str], exclude_keywords: List[str]) -> List[str]:
-    """
-    제목 텍스트에서 포함 키워드 및 제외 키워드를 검사합니다.
-    - 영문으로만 이루어진 짧은 키워드(예: AI, AX)는 영문 단어 경계를 확인하여 오탐을 방지합니다.
-    """
+    """제목 텍스트에서 포함 키워드 및 제외 키워드를 검사합니다."""
     if not text:
         return []
 
@@ -71,6 +75,68 @@ def match_keywords(text: str, keywords: List[str], exclude_keywords: List[str]) 
             if kw.lower() in text.lower():
                 matched.append(kw)
     return matched
+
+
+def fetch_post_summary(url: str, site_name: str = "") -> str:
+    """
+    공고 상세 페이지에 접속하여 간략한 개요(신청기간, 지원대상, 사업개요 등)를 추출합니다.
+    """
+    if not url or url.startswith("javascript:"):
+        return "상세 페이지에서 내용을 확인해 주세요."
+
+    try:
+        html = fetch_text(url, timeout=10)
+        soup = BeautifulSoup(html, "html.parser")
+
+        for tag in soup.select(
+            "script, style, header, footer, nav, .gnb, .lnb, #header, #footer, "
+            ".location, .location_share, .share_box, .btn_wrap, .board_Page, .contents_info"
+        ):
+            tag.decompose()
+
+        candidates = [
+            ".information_list",   # K-Startup
+            ".view_cont",          # 기업마당 (Bizinfo)
+            ".tender_con",         # KOCCA 지원사업
+            ".board_cont",         # KOCCA 공지사항
+            ".pageWrap",           # 경기기업비서 (EGBIZ)
+            ".board_view",
+            ".bbs_view",
+            ".view_body",
+            ".view_con",
+            "article",
+            "#contents",
+            "#content",
+        ]
+
+        extracted = ""
+        for sel in candidates:
+            el = soup.select_one(sel)
+            if el:
+                txt = " ".join(el.get_text(" ", strip=True).split())
+                # 불필요한 앞부분 상단 버튼 문구 정리
+                for noise in [
+                    "지원사업신청 목록가기 공유하기 프린트",
+                    "첨부파일 일괄다운로드",
+                    "공유하기 페이스북 트위터",
+                ]:
+                    txt = txt.replace(noise, "").strip()
+                if len(txt) >= 35:
+                    extracted = txt
+                    break
+
+        if not extracted:
+            body_el = soup.body or soup
+            extracted = " ".join(body_el.get_text(" ", strip=True).split())
+
+        if not extracted or len(extracted) < 15:
+            return "본문이 첨부파일(HWP/PDF) 또는 이미지로 제공되는 공고입니다. [공고 보기]를 눌러 확인해 주세요."
+
+        if len(extracted) > 420:
+            extracted = extracted[:420].rstrip() + "..."
+        return extracted
+    except Exception:
+        return "상세 요약을 불러오지 못했습니다. [공고 보기]를 눌러 원문을 확인해 주세요."
 
 
 def fetch_kstartup(max_pages: int = 3) -> List[Dict]:
@@ -248,7 +314,6 @@ def fetch_kocca(max_pages: int = 3) -> List[Dict]:
     items = []
     seen_local = set()
 
-    # (1) 지원사업 공고 게시판
     for page in range(1, max_pages + 1):
         url = f"https://www.kocca.kr/kocca/pims/list.do?menuNo=204104&pageIndex={page}"
         try:
@@ -292,7 +357,6 @@ def fetch_kocca(max_pages: int = 3) -> List[Dict]:
             print(f"[경고] 한국콘텐츠진흥원(지원사업) {page}페이지 수집 실패: {e}")
             break
 
-    # (2) 공지사항 게시판 (AI/콘텐츠 사업 및 행사 모집 포함)
     for page in range(1, max_pages + 1):
         url = f"https://www.kocca.kr/kocca/bbs/list/B0000137.do?menuNo=204102&pageIndex={page}"
         try:
@@ -339,41 +403,91 @@ def fetch_kocca(max_pages: int = 3) -> List[Dict]:
 
 
 def fetch_custom_site(site_cfg: Dict) -> List[Dict]:
-    """사용자가 config.json에 추가한 커스텀 게시판 수집"""
+    """
+    사용자가 추가한 커스텀 검색 사이트 수집.
+    CSS 선택자를 지정하지 않아도 자동으로 게시판 테이블/리스트에서 공고를 추출합니다.
+    """
     items = []
-    name = site_cfg.get("name", "커스텀 사이트")
-    list_url = site_cfg.get("list_url", "")
-    base_url = site_cfg.get("base_url", list_url)
-    row_sel = site_cfg.get("row_selector", "table tbody tr")
-    title_sel = site_cfg.get("title_selector", "a")
-    date_sel = site_cfg.get("date_selector", "")
-
+    name = site_cfg.get("name", "추가 사이트")
+    list_url = site_cfg.get("list_url") or site_cfg.get("url", "")
     if not list_url:
         return items
+
+    base_url = site_cfg.get("base_url") or list_url
+    row_sel = site_cfg.get("row_selector", "")
+    title_sel = site_cfg.get("title_selector", "")
+    date_sel = site_cfg.get("date_selector", "")
 
     try:
         html = fetch_text(list_url)
         soup = BeautifulSoup(html, "html.parser")
-        for row in soup.select(row_sel):
-            a_el = row.select_one(title_sel)
+
+        rows = []
+        if row_sel:
+            rows = soup.select(row_sel)
+        else:
+            # 자동 게시판 행 감지
+            for candidate in [
+                "table tbody tr",
+                ".board_list li",
+                ".bbs_list li",
+                ".list_wrap li",
+                "ul.board li",
+                "table tr",
+            ]:
+                found = soup.select(candidate)
+                if len(found) >= 2:
+                    rows = found
+                    break
+
+        seen_titles = set()
+        for row in rows:
+            a_el = None
+            if title_sel:
+                a_el = row.select_one(title_sel)
+            else:
+                # 행 안에서 가장 긴 텍스트를 가진 링크(a)를 공고 제목으로 선택
+                links = row.select("a")
+                best_len = 0
+                for link in links:
+                    t = link.get_text(strip=True)
+                    if len(t) > best_len and len(t) >= 8:
+                        best_len = len(t)
+                        a_el = link
+
             if not a_el:
                 continue
-            title = a_el.get_text(strip=True)
+
+            title = " ".join(a_el.get_text(" ", strip=True).split())
+            if not title or title in seen_titles:
+                continue
+            seen_titles.add(title)
+
             href = a_el.get("href", "")
-            detail_url = urllib.parse.urljoin(base_url, href) if href else list_url
-            reg_date = ""
+            if href and not href.startswith("javascript:"):
+                detail_url = urllib.parse.urljoin(base_url, href)
+            else:
+                detail_url = list_url
+
+            reg_date = "-"
             if date_sel:
                 d_el = row.select_one(date_sel)
                 if d_el:
                     reg_date = d_el.get_text(strip=True)
+            else:
+                row_text = row.get_text(" ", strip=True)
+                m_date = re.search(r"(20\d{2}[-./]\d{2}[-./]\d{2})", row_text)
+                if m_date:
+                    reg_date = m_date.group(1)
 
-            post_id = f"custom_{name}_{href or title}"
+            safe_id = re.sub(r"[^A-Za-z0-9가-힣_]", "", title)[:30]
+            post_id = f"custom_{name}_{safe_id}"
             items.append({
                 "id": post_id,
                 "site": name,
                 "title": title,
                 "agency": name,
-                "period": "-",
+                "period": reg_date,
                 "reg_date": reg_date,
                 "url": detail_url,
             })
@@ -405,12 +519,17 @@ def save_server_db(db_data: Dict, config: Dict) -> None:
     db_data["updated_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     db_data["keywords"] = config.get("keywords", [])
     db_data["exclude_keywords"] = config.get("exclude_keywords", [])
+    db_data["sites"] = config.get("sites", {})
+    db_data["custom_sites"] = config.get("custom_sites", [])
     with open(DATA_JSON_PATH, "w", encoding="utf-8") as f:
         json.dump(db_data, f, ensure_ascii=False, indent=2)
 
 
 def build_html_report(matched_items: List[Dict], keywords: List[str], today_str: str) -> str:
-    """이메일 본문 및 로컬 확인용 HTML 리포트를 생성합니다 (개별 삭제 링크 및 웹 대시보드 연동 포함)."""
+    """
+    이메일 본문 및 로컬 확인용 HTML 리포트를 생성합니다.
+    - '📄 개요' 버튼을 클릭하면 펼쳐지며 간략한 내용이 보이는 <details> 구조 포함
+    """
     rows_html = ""
     for item in matched_items:
         badges = " ".join(
@@ -421,23 +540,32 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
         )
         encoded_id = urllib.parse.quote(item["id"])
         delete_url = f"{DASHBOARD_URL}?delete={encoded_id}"
+        summary_text = html_lib.escape(item.get("summary") or "상세 내용은 공고 보기를 눌러 확인해 주세요.")
 
         rows_html += f"""
         <tr>
-            <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#4b5563;white-space:nowrap;">
+            <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#4b5563;white-space:nowrap;vertical-align:top;">
                 <strong>{item['site']}</strong><br>
                 <span style="font-size:12px;color:#6b7280;">{item['agency']}</span>
             </td>
-            <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;">
+            <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top;">
                 <div style="margin-bottom:4px;">{badges}</div>
                 <a href="{item['url']}" target="_blank" style="color:#111827;font-size:15px;font-weight:600;text-decoration:none;">
                     {item['title']}
                 </a>
+                <details style="margin-top:8px;">
+                    <summary style="display:inline-block;cursor:pointer;background:#f3f4f6;color:#374151;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid #d1d5db;user-select:none;">
+                        📄 개요
+                    </summary>
+                    <div style="margin-top:8px;padding:10px 12px;background:#f8fafc;border-left:3px solid #2563eb;border-radius:4px;font-size:13px;color:#374151;line-height:1.55;">
+                        {summary_text}
+                    </div>
+                </details>
             </td>
-            <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#374151;white-space:nowrap;">
+            <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#374151;white-space:nowrap;vertical-align:top;">
                 {item['period'] or '-'}
             </td>
-            <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;text-align:center;white-space:nowrap;">
+            <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;text-align:center;white-space:nowrap;vertical-align:top;">
                 <a href="{item['url']}" target="_blank"
                    style="display:inline-block;background:#2563eb;color:#ffffff;padding:6px 10px;border-radius:6px;font-size:12px;text-decoration:none;font-weight:600;margin-right:4px;">
                    공고 보기
@@ -467,18 +595,18 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
 <title>IT/창업 지원사업 모니터링 리포트 ({today_str})</title>
 </head>
 <body style="margin:0;padding:20px;background-color:#f3f4f6;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;">
-    <div style="max-width:940px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-        <div style="background:#1e3a8a;color:#ffffff;padding:24px 28px;display:flex;justify-content:space-between;align-items:center;">
+    <div style="max-width:960px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+        <div style="background:#1e3a8a;color:#ffffff;padding:24px 28px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
             <div>
                 <h2 style="margin:0 0 8px 0;font-size:20px;">🚀 맞춤형 지원사업 데일리 리포트 ({today_str})</h2>
                 <p style="margin:0;font-size:13px;color:#bfdbfe;">
                     설정 키워드: <strong>{kw_str}</strong> | 신규 매칭: <strong>{len(matched_items)}건</strong>
                 </p>
             </div>
-            <div style="margin-top:8px;">
+            <div>
                 <a href="{DASHBOARD_URL}" target="_blank"
                    style="display:inline-block;background:#ffffff;color:#1e3a8a;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;">
-                   📋 웹 보관함 / 삭제·키워드 관리 열기
+                   📋 웹 보관함 / 사이트·키워드 관리 열기
                 </a>
             </div>
         </div>
@@ -487,7 +615,7 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
                 <thead>
                     <tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb;text-align:left;font-size:13px;color:#374151;">
                         <th style="padding:10px;">출처 / 기관</th>
-                        <th style="padding:10px;">지원사업 공고명</th>
+                        <th style="padding:10px;">지원사업 공고명 ('📄 개요' 클릭 시 내용 확장)</th>
                         <th style="padding:10px;">접수기간</th>
                         <th style="padding:10px;text-align:center;">원문 / 서버 삭제</th>
                     </tr>
@@ -498,8 +626,8 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
             </table>
         </div>
         <div style="background:#f9fafb;padding:14px 28px;font-size:12px;color:#6b7280;border-top:1px solid #e5e7eb;">
-            • 각 공고의 <strong>[🗑️ 삭제(제외)]</strong> 버튼을 누르면 웹 보관함(서버)에서 즉시 삭제되며 다시 알림이 오지 않습니다.<br>
-            • 전체 누적 공고 확인 및 키워드 추가/변경은 <a href="{DASHBOARD_URL}" target="_blank" style="color:#2563eb;font-weight:600;">웹 대시보드({DASHBOARD_URL})</a>에서 언제든 관리할 수 있습니다.
+            • 각 공고 아래의 <strong>[📄 개요]</strong> 버튼을 누르면 공고의 핵심 요약 내용이 펼쳐집니다.<br>
+            • <strong>[🗑️ 삭제(제외)]</strong> 버튼을 누르면 서버 보관함에서 삭제되며, 검색 사이트 및 키워드 추가는 <a href="{DASHBOARD_URL}" target="_blank" style="color:#2563eb;font-weight:600;">웹 대시보드({DASHBOARD_URL})</a>에서 관리할 수 있습니다.
         </div>
     </div>
 </body>
@@ -632,7 +760,11 @@ def main():
 
     server_db = load_server_db()
     deleted_ids = set(server_db.get("deleted_ids", []))
-    existing_items_map = {item["id"]: item for item in server_db.get("items", []) if item.get("id") not in deleted_ids}
+    existing_items_map = {
+        item["id"]: item
+        for item in server_db.get("items", [])
+        if item.get("id") not in deleted_ids
+    }
 
     seen_ids = set() if args.ignore_seen else load_seen_ids()
     seen_ids.update(deleted_ids)
@@ -640,6 +772,8 @@ def main():
     matched_items: List[Dict] = []
     new_seen_ids = set(seen_ids)
     today_str = datetime.date.today().strftime("%Y-%m-%d")
+
+    posts_needing_summary: List[Dict] = []
 
     for post in all_posts:
         if post["id"] in deleted_ids:
@@ -650,17 +784,34 @@ def main():
         if not matched_kws:
             continue
 
+        prev_item = existing_items_map.get(post["id"], {})
         post["matched_keywords"] = matched_kws
-        post["collected_date"] = existing_items_map.get(post["id"], {}).get("collected_date", today_str)
+        post["collected_date"] = prev_item.get("collected_date", today_str)
 
-        # 누적 DB에 저장/갱신
+        if prev_item.get("summary"):
+            post["summary"] = prev_item["summary"]
+        else:
+            posts_needing_summary.append(post)
+
         existing_items_map[post["id"]] = post
 
         if post["id"] not in seen_ids:
             matched_items.append(post)
             new_seen_ids.add(post["id"])
 
-    # 최신 수집일 순으로 누적 DB 정렬 후 저장
+    if posts_needing_summary:
+        print(f"- 신규 공고 상세 개요 추출 중 ({len(posts_needing_summary)}건)...")
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [
+                (p, executor.submit(fetch_post_summary, p["url"], p["site"]))
+                for p in posts_needing_summary
+            ]
+            for p, fut in futures:
+                try:
+                    p["summary"] = fut.result()
+                except Exception:
+                    p["summary"] = "상세 내용은 [공고 보기]를 눌러 확인해 주세요."
+
     updated_items_list = list(existing_items_map.values())
     server_db["items"] = updated_items_list
     save_server_db(server_db, config)
