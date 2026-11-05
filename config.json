@@ -1,0 +1,54 @@
+{
+  "keywords": [
+    "AI",
+    "인공지능",
+    "AX",
+    "로봇",
+    "창업",
+    "벤처",
+    "스타트업"
+  ],
+  "exclude_keywords": [
+    "어업용",
+    "일반음식점"
+  ],
+  "max_pages_per_site": 3,
+  "sites": {
+    "kstartup": {
+      "enabled": true,
+      "name": "K-Startup (창업지원포털)",
+      "url": "https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do"
+    },
+    "bizinfo": {
+      "enabled": true,
+      "name": "기업마당 (Bizinfo)",
+      "url": "https://www.bizinfo.go.kr/web/lay1/bbs/S1T122C128/AS/74/list.do"
+    },
+    "egbiz": {
+      "enabled": true,
+      "name": "경기기업비서 (이지비즈)",
+      "url": "https://www.egbiz.or.kr/sp/supportPrjCatList.do"
+    },
+    "kocca": {
+      "enabled": true,
+      "name": "한국콘텐츠진흥원 (KOCCA)",
+      "url": "https://www.kocca.kr/kocca/pims/list.do?menuNo=204104"
+    }
+  },
+  "custom_sites": [
+    {
+      "enabled": false,
+      "name": "추가 사이트 예시 (나중에 원하는 게시판 추가용)",
+      "list_url": "https://example.or.kr/board/list.do",
+      "base_url": "https://example.or.kr",
+      "row_selector": "table tbody tr",
+      "title_selector": "td a",
+      "date_selector": "td:nth-of-type(4)"
+    }
+  ],
+  "email": {
+    "send_only_when_new": true,
+    "subject_prefix": "[IT/창업 지원사업 알림]"
+  }
+}
+
