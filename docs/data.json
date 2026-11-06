@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-07 08:12:07",
+  "updated_at": "2026-11-06 23:50:19",
   "items": [
     {
       "id": "kstartup_179737",
@@ -767,5 +767,6 @@
       "title_selector": "td a",
       "date_selector": "td:nth-of-type(4)"
     }
-  ]
+  ],
+  "last_email_status": "발송 성공 (2026-11-06 23:50:19)"
 }
