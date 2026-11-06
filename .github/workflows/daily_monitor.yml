@@ -2,8 +2,13 @@ name: Daily Support Program Monitor
 
 on:
   schedule:
-    # 매일 한국시간(KST) 오전 08:00 실행 (UTC 23:00)
-    - cron: '0 23 * * *'
+    # 매일 한국시간(KST) 오전 07:20 실행 (UTC 22:20) - 정각 트래픽 혼잡 회피
+    - cron: '20 22 * * *'
+  push:
+    branches: [ main ]
+    paths:
+      - 'monitor.py'
+      - 'config.json'
   workflow_dispatch: # GitHub 웹페이지에서 언제든 수동 실행 가능
 
 permissions:
@@ -29,7 +34,7 @@ jobs:
 
       - name: 모니터링 및 이메일 발송 실행
         env:
-          SMTP_HOST: ${{ secrets.SMTP_HOST || 'smtp.gmail.com' }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT || '587' }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
@@ -41,7 +46,7 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+          git pull --rebase --autostash origin main || true
           git add seen_posts.json docs/data.json
           git diff --staged --quiet || git commit -m "chore: update seen_posts and server data [skip ci]"
           git push
-

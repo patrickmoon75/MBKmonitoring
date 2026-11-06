@@ -47,7 +47,7 @@
     }
   ],
   "email": {
-    "send_only_when_new": true,
+    "send_only_when_new": false,
     "subject_prefix": "[IT/창업 지원사업 알림]"
   }
 }

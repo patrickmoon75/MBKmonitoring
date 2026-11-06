@@ -644,18 +644,28 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
 """
 
 
-def send_email(subject: str, html_body: str) -> bool:
+def send_email(subject: str, html_body: str) -> Tuple[bool, str]:
     """환경 변수에 설정된 SMTP 계정 정보로 이메일을 발송합니다."""
-    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
     smtp_user = os.environ.get("SMTP_USER", "").strip()
-    smtp_pass = os.environ.get("SMTP_PASS", "").strip()
+    # 구글 앱 비밀번호 복사 시 포함될 수 있는 공백 자동 제거
+    smtp_pass = os.environ.get("SMTP_PASS", "").replace(" ", "").strip()
     recipient_raw = os.environ.get("RECIPIENT_EMAIL", smtp_user).strip()
 
     if not smtp_user or not smtp_pass or not recipient_raw:
-        print("[안내] 이메일 환경변수(SMTP_USER, SMTP_PASS, RECIPIENT_EMAIL)가 설정되지 않아 이메일 발송을 건너뜁니다.")
-        return False
+        msg_str = "이메일 환경변수(SMTP_USER, SMTP_PASS, RECIPIENT_EMAIL) 미설정"
+        print(f"[안내] {msg_str} -> 이메일 발송을 건너뜁니다.")
+        return False, msg_str
 
+    smtp_host = os.environ.get("SMTP_HOST", "").strip()
+    if not smtp_host:
+        if smtp_user.lower().endswith("@naver.com"):
+            smtp_host = "smtp.naver.com"
+        elif smtp_user.lower().endswith("@daum.net") or smtp_user.lower().endswith("@hanmail.net"):
+            smtp_host = "smtp.daum.net"
+        else:
+            smtp_host = "smtp.gmail.com"
+
+    smtp_port = int(os.environ.get("SMTP_PORT", "587") or "587")
     recipients = [r.strip() for r in recipient_raw.split(",") if r.strip()]
 
     msg = MIMEMultipart("alternative")
@@ -664,14 +674,21 @@ def send_email(subject: str, html_body: str) -> bool:
     msg["To"] = ", ".join(recipients)
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
-        server.ehlo()
-        server.starttls()
-        server.login(smtp_user, smtp_pass)
-        server.sendmail(smtp_user, recipients, msg.as_string())
-
-    print(f"[성공] 이메일 발송 완료 -> {', '.join(recipients)}")
-    return True
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=25) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, recipients, msg.as_string())
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        status_msg = f"발송 성공 ({now_str})"
+        print(f"[성공] 이메일 발송 완료 -> {', '.join(recipients)}")
+        return True, status_msg
+    except Exception as e:
+        err_msg = f"발송 실패: {type(e).__name__} - {e}"
+        print(f"[오류] 이메일 {err_msg}")
+        return False, err_msg
 
 
 def load_seen_ids() -> Set[str]:
@@ -835,7 +852,9 @@ def main():
         kws = ", ".join(item["matched_keywords"])
         print(f"  {idx}. [{item['site']}] ({kws}) {item['title']} ({item['period']})")
 
-    html_report = build_html_report(matched_items, keywords, today_str)
+    # 신규 공고가 없더라도 매일 리포트를 받아볼 수 있도록 보관함 최신 목록(최대 30건)을 이메일 본문에 포함
+    report_items = matched_items if matched_items else updated_items_list[:30]
+    html_report = build_html_report(report_items, keywords, today_str)
 
     with open(REPORT_PATH, "w", encoding="utf-8") as f:
         f.write(html_report)
@@ -846,15 +865,22 @@ def main():
         print("[Dry-Run 모드] 이메일 발송 및 seen_posts.json 업데이트를 건너뜁니다.")
         return
 
-    send_only_when_new = config.get("email", {}).get("send_only_when_new", True)
+    send_only_when_new = config.get("email", {}).get("send_only_when_new", False)
     if not matched_items and send_only_when_new:
         print("[안내] 신규 매칭 공고가 없어 이메일을 발송하지 않습니다.")
         return
 
     subject_prefix = config.get("email", {}).get("subject_prefix", "[IT/창업 지원사업 알림]")
-    subject = f"{subject_prefix} {today_str} 신규 매칭 {len(matched_items)}건"
-    sent = send_email(subject, html_report)
-    if sent or os.environ.get("GITHUB_ACTIONS") == "true":
+    if matched_items:
+        subject = f"{subject_prefix} {today_str} 신규 매칭 {len(matched_items)}건"
+    else:
+        subject = f"{subject_prefix} {today_str} 진행중 지원사업 브리핑 ({len(report_items)}건)"
+
+    sent, email_status = send_email(subject, html_report)
+    server_db["last_email_status"] = email_status
+    save_server_db(server_db, config)
+
+    if sent:
         save_seen_ids(new_seen_ids)
 
 
