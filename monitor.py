@@ -13,7 +13,7 @@ import urllib.request
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Tuple
 
 from bs4 import BeautifulSoup
 
@@ -77,12 +77,16 @@ def match_keywords(text: str, keywords: List[str], exclude_keywords: List[str]) 
     return matched
 
 
-def fetch_post_summary(url: str, site_name: str = "") -> str:
+def fetch_post_summary_and_detail(url: str, site_name: str = "") -> Tuple[str, str]:
     """
-    공고 상세 페이지에 접속하여 간략한 개요(신청기간, 지원대상, 사업개요 등)를 추출합니다.
+    공고 상세 페이지에 접속하여:
+    1) 화면 표시용 간략 개요 (summary, 약 420자)
+    2) AI 질문 답변용 상세 본문 (detail_text, 최대 2,500자)
+    두 가지를 추출합니다.
     """
+    default_msg = "상세 페이지에서 내용을 확인해 주세요."
     if not url or url.startswith("javascript:"):
-        return "상세 페이지에서 내용을 확인해 주세요."
+        return default_msg, default_msg
 
     try:
         html = fetch_text(url, timeout=10)
@@ -114,7 +118,6 @@ def fetch_post_summary(url: str, site_name: str = "") -> str:
             el = soup.select_one(sel)
             if el:
                 txt = " ".join(el.get_text(" ", strip=True).split())
-                # 불필요한 앞부분 상단 버튼 문구 정리
                 for noise in [
                     "지원사업신청 목록가기 공유하기 프린트",
                     "첨부파일 일괄다운로드",
@@ -130,13 +133,15 @@ def fetch_post_summary(url: str, site_name: str = "") -> str:
             extracted = " ".join(body_el.get_text(" ", strip=True).split())
 
         if not extracted or len(extracted) < 15:
-            return "본문이 첨부파일(HWP/PDF) 또는 이미지로 제공되는 공고입니다. [공고 보기]를 눌러 확인해 주세요."
+            msg = "본문이 첨부파일(HWP/PDF) 또는 이미지로 제공되는 공고입니다. [공고 보기]를 눌러 확인해 주세요."
+            return msg, msg
 
-        if len(extracted) > 420:
-            extracted = extracted[:420].rstrip() + "..."
-        return extracted
+        summary = extracted[:420].rstrip() + ("..." if len(extracted) > 420 else "")
+        detail_text = extracted[:2500].rstrip()
+        return summary, detail_text
     except Exception:
-        return "상세 요약을 불러오지 못했습니다. [공고 보기]를 눌러 원문을 확인해 주세요."
+        msg = "상세 요약을 불러오지 못했습니다. [공고 보기]를 눌러 원문을 확인해 주세요."
+        return msg, msg
 
 
 def fetch_kstartup(max_pages: int = 3) -> List[Dict]:
@@ -403,10 +408,7 @@ def fetch_kocca(max_pages: int = 3) -> List[Dict]:
 
 
 def fetch_custom_site(site_cfg: Dict) -> List[Dict]:
-    """
-    사용자가 추가한 커스텀 검색 사이트 수집.
-    CSS 선택자를 지정하지 않아도 자동으로 게시판 테이블/리스트에서 공고를 추출합니다.
-    """
+    """사용자가 추가한 커스텀 검색 사이트 수집."""
     items = []
     name = site_cfg.get("name", "추가 사이트")
     list_url = site_cfg.get("list_url") or site_cfg.get("url", "")
@@ -426,7 +428,6 @@ def fetch_custom_site(site_cfg: Dict) -> List[Dict]:
         if row_sel:
             rows = soup.select(row_sel)
         else:
-            # 자동 게시판 행 감지
             for candidate in [
                 "table tbody tr",
                 ".board_list li",
@@ -446,7 +447,6 @@ def fetch_custom_site(site_cfg: Dict) -> List[Dict]:
             if title_sel:
                 a_el = row.select_one(title_sel)
             else:
-                # 행 안에서 가장 긴 텍스트를 가진 링크(a)를 공고 제목으로 선택
                 links = row.select("a")
                 best_len = 0
                 for link in links:
@@ -528,7 +528,7 @@ def save_server_db(db_data: Dict, config: Dict) -> None:
 def build_html_report(matched_items: List[Dict], keywords: List[str], today_str: str) -> str:
     """
     이메일 본문 및 로컬 확인용 HTML 리포트를 생성합니다.
-    - '📄 개요' 버튼을 클릭하면 펼쳐지며 간략한 내용이 보이는 <details> 구조 포함
+    - '📄 개요' 버튼 클릭 시 확장 + '🤖 AI 질문하기' 연동 포함
     """
     rows_html = ""
     for item in matched_items:
@@ -540,6 +540,7 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
         )
         encoded_id = urllib.parse.quote(item["id"])
         delete_url = f"{DASHBOARD_URL}?delete={encoded_id}"
+        ask_url = f"{DASHBOARD_URL}?ask={encoded_id}"
         summary_text = html_lib.escape(item.get("summary") or "상세 내용은 공고 보기를 눌러 확인해 주세요.")
 
         rows_html += f"""
@@ -557,8 +558,12 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
                     <summary style="display:inline-block;cursor:pointer;background:#f3f4f6;color:#374151;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid #d1d5db;user-select:none;">
                         📄 개요
                     </summary>
-                    <div style="margin-top:8px;padding:10px 12px;background:#f8fafc;border-left:3px solid #2563eb;border-radius:4px;font-size:13px;color:#374151;line-height:1.55;">
-                        {summary_text}
+                    <div style="margin-top:8px;padding:12px 14px;background:#f8fafc;border-left:3px solid #2563eb;border-radius:6px;font-size:13px;color:#374151;line-height:1.6;">
+                        <div style="margin-bottom:10px;">{summary_text}</div>
+                        <a href="{ask_url}" target="_blank"
+                           style="display:inline-block;background:#7c3aed;color:#ffffff;padding:6px 12px;border-radius:6px;font-size:12px;text-decoration:none;font-weight:600;">
+                           🤖 이 공고에 대해 AI에게 질문하기
+                        </a>
                     </div>
                 </details>
             </td>
@@ -566,13 +571,17 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
                 {item['period'] or '-'}
             </td>
             <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;text-align:center;white-space:nowrap;vertical-align:top;">
+                <a href="{ask_url}" target="_blank"
+                   style="display:inline-block;background:#f3e8ff;color:#6d28d9;padding:6px 10px;border-radius:6px;font-size:12px;text-decoration:none;font-weight:600;margin-right:4px;">
+                   🤖 AI 질문
+                </a>
                 <a href="{item['url']}" target="_blank"
                    style="display:inline-block;background:#2563eb;color:#ffffff;padding:6px 10px;border-radius:6px;font-size:12px;text-decoration:none;font-weight:600;margin-right:4px;">
                    공고 보기
                 </a>
                 <a href="{delete_url}" target="_blank"
                    style="display:inline-block;background:#fee2e2;color:#dc2626;padding:6px 10px;border-radius:6px;font-size:12px;text-decoration:none;font-weight:600;">
-                   🗑️ 삭제(제외)
+                   🗑️ 삭제
                 </a>
             </td>
         </tr>
@@ -595,7 +604,7 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
 <title>IT/창업 지원사업 모니터링 리포트 ({today_str})</title>
 </head>
 <body style="margin:0;padding:20px;background-color:#f3f4f6;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;">
-    <div style="max-width:960px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+    <div style="max-width:980px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
         <div style="background:#1e3a8a;color:#ffffff;padding:24px 28px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
             <div>
                 <h2 style="margin:0 0 8px 0;font-size:20px;">🚀 맞춤형 지원사업 데일리 리포트 ({today_str})</h2>
@@ -606,7 +615,7 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
             <div>
                 <a href="{DASHBOARD_URL}" target="_blank"
                    style="display:inline-block;background:#ffffff;color:#1e3a8a;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;">
-                   📋 웹 보관함 / 사이트·키워드 관리 열기
+                   📋 웹 대시보드 (AI 질문 / 사이트·키워드 관리) 열기
                 </a>
             </div>
         </div>
@@ -617,7 +626,7 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
                         <th style="padding:10px;">출처 / 기관</th>
                         <th style="padding:10px;">지원사업 공고명 ('📄 개요' 클릭 시 내용 확장)</th>
                         <th style="padding:10px;">접수기간</th>
-                        <th style="padding:10px;text-align:center;">원문 / 서버 삭제</th>
+                        <th style="padding:10px;text-align:center;">AI 질문 / 원문 / 삭제</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -626,8 +635,8 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
             </table>
         </div>
         <div style="background:#f9fafb;padding:14px 28px;font-size:12px;color:#6b7280;border-top:1px solid #e5e7eb;">
-            • 각 공고 아래의 <strong>[📄 개요]</strong> 버튼을 누르면 공고의 핵심 요약 내용이 펼쳐집니다.<br>
-            • <strong>[🗑️ 삭제(제외)]</strong> 버튼을 누르면 서버 보관함에서 삭제되며, 검색 사이트 및 키워드 추가는 <a href="{DASHBOARD_URL}" target="_blank" style="color:#2563eb;font-weight:600;">웹 대시보드({DASHBOARD_URL})</a>에서 관리할 수 있습니다.
+            • 각 공고의 <strong>[📄 개요]</strong>를 누르면 핵심 요약이 펼쳐지며, <strong>[🤖 AI 질문]</strong>을 누르면 해당 공고 내용을 바탕으로 AI와 질의응답할 수 있습니다.<br>
+            • <strong>[🗑️ 삭제]</strong> 버튼을 누르면 서버 보관함에서 삭제되며, 검색 사이트 및 키워드 추가는 <a href="{DASHBOARD_URL}" target="_blank" style="color:#2563eb;font-weight:600;">웹 대시보드({DASHBOARD_URL})</a>에서 관리할 수 있습니다.
         </div>
     </div>
 </body>
@@ -788,8 +797,9 @@ def main():
         post["matched_keywords"] = matched_kws
         post["collected_date"] = prev_item.get("collected_date", today_str)
 
-        if prev_item.get("summary"):
+        if prev_item.get("summary") and prev_item.get("detail_text"):
             post["summary"] = prev_item["summary"]
+            post["detail_text"] = prev_item["detail_text"]
         else:
             posts_needing_summary.append(post)
 
@@ -800,17 +810,20 @@ def main():
             new_seen_ids.add(post["id"])
 
     if posts_needing_summary:
-        print(f"- 신규 공고 상세 개요 추출 중 ({len(posts_needing_summary)}건)...")
+        print(f"- 신규 공고 상세 개요 및 AI 분석용 본문 추출 중 ({len(posts_needing_summary)}건)...")
         with ThreadPoolExecutor(max_workers=8) as executor:
             futures = [
-                (p, executor.submit(fetch_post_summary, p["url"], p["site"]))
+                (p, executor.submit(fetch_post_summary_and_detail, p["url"], p["site"]))
                 for p in posts_needing_summary
             ]
             for p, fut in futures:
                 try:
-                    p["summary"] = fut.result()
+                    summary_txt, detail_txt = fut.result()
+                    p["summary"] = summary_txt
+                    p["detail_text"] = detail_txt
                 except Exception:
                     p["summary"] = "상세 내용은 [공고 보기]를 눌러 확인해 주세요."
+                    p["detail_text"] = p["summary"]
 
     updated_items_list = list(existing_items_map.values())
     server_db["items"] = updated_items_list
