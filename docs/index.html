@@ -536,12 +536,20 @@
           <button class="tab" onclick="setSiteFilter('한국콘텐츠진흥원(KOCCA)')">한국콘텐츠진흥원</button>
           <button class="tab" onclick="setSiteFilter('DELETED')" style="color:#dc2626;">🗑️ 삭제(제외)함</button>
         </div>
-        <input type="text" class="search-input" id="searchInput" placeholder="공고명, 기관명, 키워드 검색..." oninput="renderTable()" />
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-danger" id="bulkDeleteBtn" style="display:none;padding:8px 14px;" onclick="bulkActionSelected()">
+            🗑️ 선택 항목 일괄 삭제 (0건)
+          </button>
+          <input type="text" class="search-input" id="searchInput" placeholder="공고명, 기관명, 키워드 검색..." oninput="renderTable()" />
+        </div>
       </div>
 
       <table>
         <thead>
           <tr>
+            <th style="width:42px;text-align:center;">
+              <input type="checkbox" id="selectAllCheckbox" style="width:16px;height:16px;cursor:pointer;" onclick="toggleSelectAll(this.checked)" title="현재 목록 전체 선택/해제" />
+            </th>
             <th style="width:150px;">출처 / 기관</th>
             <th>지원사업 공고명 ('📄 개요' 클릭 시 좌측 개요·질문기록 + 우측 AI 답변창 확장)</th>
             <th style="width:170px;">접수기간 / 등록일</th>
@@ -616,6 +624,11 @@
     let currentSiteFilter = "ALL";
     let hasUnsavedChanges = false;
     let pendingAskItemId = null;
+
+    // 다중 선택된 공고 ID 목록
+    let selectedIds = new Set();
+    let currentRenderedIds = [];
+    let lastCheckedIndex = null;
 
     // 공고별 질문/답변 누적 기록 { [itemId]: [ { id, question, answer, time } ] }
     let qaHistoryMap = {};
@@ -888,10 +901,94 @@
 
     function setSiteFilter(site) {
       currentSiteFilter = site;
+      selectedIds.clear();
+      lastCheckedIndex = null;
       document.querySelectorAll("#siteTabs .tab").forEach(btn => {
         btn.classList.toggle("active", btn.textContent.includes(site === "ALL" ? "전체 보기" : site === "DELETED" ? "삭제(제외)함" : site.split("(")[0]));
       });
       renderTable();
+    }
+
+    function updateBulkButton() {
+      const btn = document.getElementById("bulkDeleteBtn");
+      const allChk = document.getElementById("selectAllCheckbox");
+      const count = selectedIds.size;
+
+      if (allChk) {
+        allChk.checked = currentRenderedIds.length > 0 && currentRenderedIds.every(id => selectedIds.has(id));
+      }
+
+      if (!btn) return;
+      if (count === 0) {
+        btn.style.display = "none";
+      } else {
+        btn.style.display = "inline-flex";
+        if (currentSiteFilter === "DELETED") {
+          btn.className = "btn btn-primary";
+          btn.innerHTML = `♻️ 선택 항목 일괄 복구 (${count}건)`;
+        } else {
+          btn.className = "btn btn-danger";
+          btn.innerHTML = `🗑️ 선택 항목 일괄 삭제 (${count}건)`;
+        }
+      }
+    }
+
+    function toggleRowCheckbox(event, itemId, index) {
+      const checked = event.target.checked;
+      if (event.shiftKey && lastCheckedIndex !== null && lastCheckedIndex !== index) {
+        const start = Math.min(lastCheckedIndex, index);
+        const end = Math.max(lastCheckedIndex, index);
+        for (let i = start; i <= end; i++) {
+          const id = currentRenderedIds[i];
+          if (id) {
+            if (checked) selectedIds.add(id);
+            else selectedIds.delete(id);
+          }
+        }
+        renderTable();
+      } else {
+        if (checked) selectedIds.add(itemId);
+        else selectedIds.delete(itemId);
+        updateBulkButton();
+      }
+      lastCheckedIndex = index;
+    }
+
+    function toggleSelectAll(checked) {
+      currentRenderedIds.forEach(id => {
+        if (checked) selectedIds.add(id);
+        else selectedIds.delete(id);
+      });
+      renderTable();
+    }
+
+    function bulkActionSelected() {
+      const ids = Array.from(selectedIds);
+      if (ids.length === 0) return;
+
+      if (currentSiteFilter === "DELETED") {
+        serverData.deleted_ids = serverData.deleted_ids.filter(id => !selectedIds.has(id));
+        selectedIds.clear();
+        markChanged();
+        renderTable();
+        updateHeaderStatus();
+        showToast(`♻️ 선택한 ${ids.length}건의 공고를 보관함으로 일괄 복구했습니다.`);
+      } else {
+        ids.forEach(id => {
+          if (!serverData.deleted_ids.includes(id)) {
+            serverData.deleted_ids.push(id);
+          }
+        });
+        selectedIds.clear();
+        markChanged();
+        renderTable();
+        updateHeaderStatus();
+        showToast(`🗑️ 선택한 ${ids.length}건의 공고를 일괄 삭제(제외)했습니다.`);
+      }
+
+      if (localStorage.getItem("mbk_github_token")) {
+        syncToGitHub(true);
+      }
     }
 
     function toggleSummary(itemId, safeId) {
@@ -1093,6 +1190,7 @@ ${contextText}
       if (!serverData.deleted_ids.includes(id)) {
         serverData.deleted_ids.push(id);
       }
+      selectedIds.delete(id);
       markChanged();
       renderTable();
       updateHeaderStatus();
@@ -1105,6 +1203,7 @@ ${contextText}
 
     function restoreItem(id) {
       serverData.deleted_ids = serverData.deleted_ids.filter(x => x !== id);
+      selectedIds.delete(id);
       markChanged();
       renderTable();
       updateHeaderStatus();
@@ -1141,10 +1240,13 @@ ${contextText}
         );
       }
 
+      currentRenderedIds = list.map(i => i.id);
+      updateBulkButton();
+
       if (list.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="4" style="text-align:center;padding:36px;color:var(--muted);">
+            <td colspan="5" style="text-align:center;padding:36px;color:var(--muted);">
               표시할 지원사업 공고가 없습니다.
             </td>
           </tr>
@@ -1152,9 +1254,10 @@ ${contextText}
         return;
       }
 
-      tbody.innerHTML = list.map(item => {
+      tbody.innerHTML = list.map((item, idx) => {
         const badges = (item.matched_keywords || []).map(k => `<span class="badge">#${escapeHtml(k)}</span>`).join("");
         const isDeleted = serverData.deleted_ids.includes(item.id);
+        const isChecked = selectedIds.has(item.id) ? "checked" : "";
         const safeId = item.id.replace(/[^A-Za-z0-9_-]/g, "_");
         const formattedSummary = formatSummaryHtml(item.summary);
         const qCount = (qaHistoryMap[item.id] || []).length;
@@ -1167,6 +1270,9 @@ ${contextText}
         return `
           <!-- 상단 기본 행 -->
           <tr class="main-row" id="row_${safeId}">
+            <td style="text-align:center;">
+              <input type="checkbox" ${isChecked} style="width:16px;height:16px;cursor:pointer;" onclick="toggleRowCheckbox(event, '${item.id}', ${idx})" />
+            </td>
             <td>
               <strong>${escapeHtml(item.site)}</strong><br>
               <span style="font-size:12px;color:var(--muted);">${escapeHtml(item.agency || '')}</span>
@@ -1186,9 +1292,9 @@ ${contextText}
             </td>
           </tr>
 
-          <!-- 펼쳐지는 상세 행 (가로 4열 전체를 사용하여 우측 빈 공간을 AI 답변창으로 100% 활용) -->
+          <!-- 펼쳐지는 상세 행 (가로 5열 전체를 사용하여 우측 빈 공간을 AI 답변창으로 100% 활용) -->
           <tr class="detail-row" id="detailrow_${safeId}">
-            <td colspan="4">
+            <td colspan="5">
               <div class="expanded-grid">
                 <!-- 좌측: 항목별 줄바꿈된 공고 개요 + AI 질문 입력 및 누적 질문 기록 -->
                 <div>
