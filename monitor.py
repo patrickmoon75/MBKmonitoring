@@ -525,6 +525,32 @@ def save_server_db(db_data: Dict, config: Dict) -> None:
         json.dump(db_data, f, ensure_ascii=False, indent=2)
 
 
+def format_summary_html(raw_text: str) -> str:
+    """개요 텍스트를 주요 항목별로 줄바꿈하고 라벨을 강조합니다."""
+    if not raw_text:
+        return "상세 내용은 공고 보기를 눌러 확인해 주세요."
+    text = html_lib.escape(raw_text)
+    text = re.sub(r"^신청방법 및 대상\s*", "", text)
+
+    labels = [
+        "신청기간", "접수기간", "공고기간", "신청방법", "접수방법", "신청대상", "지원대상",
+        "제외대상", "신청 시 요청하는 정보", "사업개요", "공고 개요", "지원내용", "지원규모",
+        "소관부처·지자체", "소관부처", "사업수행기관", "수행기관", "문의처", "진행구분", "관련사이트"
+    ]
+    for label in labels:
+        pattern = rf"(?:^|\s+)({re.escape(label)})(?=\s)"
+        badge_html = (
+            f'<br><span style="display:inline-block;background:#eff6ff;color:#1e40af;'
+            f'font-weight:700;padding:1px 6px;border-radius:4px;margin-right:6px;font-size:12px;">\\1</span>'
+        )
+        text = re.sub(pattern, badge_html, text)
+
+    text = re.sub(r"\s+(※|☞|□|■|ㅇ(?=\s))", r"<br>\1", text)
+    text = re.sub(r"\s+(-\s)", r"<br>&nbsp;&nbsp;\1", text)
+    text = re.sub(r"^(<br>\s*)+", "", text)
+    return text
+
+
 def build_html_report(matched_items: List[Dict], keywords: List[str], today_str: str) -> str:
     """
     이메일 본문 및 로컬 확인용 HTML 리포트를 생성합니다.
@@ -541,7 +567,7 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
         encoded_id = urllib.parse.quote(item["id"])
         delete_url = f"{DASHBOARD_URL}?delete={encoded_id}"
         ask_url = f"{DASHBOARD_URL}?ask={encoded_id}"
-        summary_text = html_lib.escape(item.get("summary") or "상세 내용은 공고 보기를 눌러 확인해 주세요.")
+        summary_text = format_summary_html(item.get("summary") or "")
 
         rows_html += f"""
         <tr>

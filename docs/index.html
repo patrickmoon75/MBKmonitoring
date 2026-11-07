@@ -28,7 +28,7 @@
       font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', -apple-system, sans-serif;
     }
     .container {
-      max-width: 1680px;
+      max-width: 1440px;
       margin: 0 auto;
     }
     .header {
@@ -96,26 +96,16 @@
       .grid-2 { grid-template-columns: 1fr; }
     }
 
-    /* 좌측 공고 목록 + 우측 AI 답변 패널 2단 레이아웃 */
-    .main-workspace {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 460px;
-      gap: 18px;
-      margin-top: 16px;
-      align-items: start;
-    }
-    @media (max-width: 1240px) {
-      .main-workspace {
-        grid-template-columns: 1fr;
-      }
-    }
-
     .panel {
       background: var(--card);
       border-radius: 12px;
       padding: 18px 22px;
+      margin-top: 16px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.05);
       border: 1px solid var(--border);
+    }
+    .grid-2 .panel {
+      margin-top: 0;
     }
     .panel-title {
       font-size: 15px;
@@ -206,7 +196,7 @@
       border: 1px solid #d1d5db;
       border-radius: 8px;
       font-size: 13px;
-      width: 230px;
+      width: 250px;
     }
 
     table {
@@ -225,14 +215,65 @@
       padding: 13px 10px;
       border-bottom: 1px solid var(--border);
       font-size: 14px;
-      vertical-align: top;
+      vertical-align: middle;
     }
-    tr:hover td {
+    tr.main-row:hover td {
       background: #f8fafc;
     }
-    tr.selected-row td {
-      background: #faf5ff;
+    tr.detail-row {
+      display: none;
     }
+    tr.detail-row.open {
+      display: table-row;
+    }
+    tr.detail-row td {
+      padding: 0 10px 18px 10px;
+      background: #ffffff;
+      border-bottom: 2px solid #cbd5e1;
+    }
+
+    /* 펼쳐진 상세 영역: 좌측(개요+질문기록) + 우측(빈 공간을 채우는 AI 답변 창) 2단 그리드 */
+    .expanded-grid {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 16px;
+      padding: 16px;
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      align-items: stretch;
+    }
+    @media (max-width: 960px) {
+      .expanded-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .summary-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid var(--primary-light);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 13.5px;
+      color: #374151;
+      line-height: 1.65;
+    }
+    .summary-item-line {
+      margin-bottom: 6px;
+      padding-left: 2px;
+    }
+    .summary-label {
+      display: inline-block;
+      background: #eff6ff;
+      color: #1e40af;
+      font-weight: 700;
+      padding: 1px 7px;
+      border-radius: 4px;
+      margin-right: 6px;
+      font-size: 12.5px;
+    }
+
     .badge {
       display: inline-block;
       background: #eef2ff;
@@ -254,25 +295,13 @@
       color: var(--primary-light);
       text-decoration: underline;
     }
-    .summary-box {
-      display: none;
-      margin-top: 10px;
-      padding: 14px 16px;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-left: 4px solid var(--primary-light);
-      border-radius: 8px;
-      font-size: 13px;
-      color: #374151;
-      line-height: 1.6;
-    }
-    .summary-box.open {
-      display: block;
-    }
+
     .ai-box {
       margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px dashed #cbd5e1;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 14px 16px;
     }
     .ai-quick-btns {
       display: flex;
@@ -307,7 +336,7 @@
       font-size: 13px;
     }
 
-    /* 기존 답변 자리: 질문 기록 누적 리스트 */
+    /* 좌측 하단: 질문 기록 누적 리스트 */
     .history-list {
       margin-top: 10px;
       display: flex;
@@ -320,11 +349,11 @@
       align-items: center;
       gap: 8px;
       padding: 7px 11px;
-      background: #ffffff;
+      background: #faf5ff;
       border: 1px solid #e9d5ff;
       border-left: 3px solid var(--purple);
       border-radius: 6px;
-      font-size: 12px;
+      font-size: 12.5px;
       color: #4c1d95;
       cursor: pointer;
       transition: 0.15s;
@@ -360,55 +389,43 @@
       color: var(--danger);
     }
 
-    /* 우측 고정 AI 답변 전용 사이드 패널 */
-    .ai-side-panel {
-      position: sticky;
-      top: 20px;
+    /* 우측 빈 공간(접수기간·관리 버튼 아래쪽)을 꽉 채우는 인라인 AI 답변 패널 */
+    .inline-ai-panel {
       background: #ffffff;
-      border-radius: 14px;
+      border-radius: 10px;
       border: 2px solid #ddd6fe;
-      box-shadow: 0 6px 20px rgba(124, 58, 237, 0.08);
-      overflow: hidden;
       display: flex;
       flex-direction: column;
-      max-height: calc(100vh - 40px);
+      overflow: hidden;
+      min-height: 290px;
     }
-    .ai-side-header {
+    .inline-ai-header {
       background: linear-gradient(135deg, #6d28d9, #7c3aed);
       color: #ffffff;
-      padding: 16px 20px;
+      padding: 11px 16px;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      font-size: 14px;
+      font-weight: 700;
     }
-    .ai-side-header h3 {
-      margin: 0;
-      font-size: 16px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .ai-side-meta {
-      padding: 12px 20px;
+    .inline-ai-qbar {
+      padding: 9px 16px;
       background: #faf5ff;
       border-bottom: 1px solid #ede9fe;
-      font-size: 13px;
+      font-size: 12.5px;
+      color: #4c1d95;
+      font-weight: 600;
     }
-    .ai-side-body {
-      padding: 18px 20px;
-      overflow-y: auto;
+    .inline-ai-body {
+      padding: 16px;
       flex: 1;
       font-size: 13.5px;
       line-height: 1.7;
       color: #1f2937;
       white-space: pre-wrap;
-    }
-    .ai-side-footer {
-      padding: 12px 16px;
-      background: #f9fafb;
-      border-top: 1px solid var(--border);
-      display: flex;
-      gap: 6px;
+      overflow-y: auto;
+      max-height: 460px;
     }
 
     .toast {
@@ -508,53 +525,31 @@
       </div>
     </div>
 
-    <!-- 하단 메인 영역: 좌측 지원사업 표 + 우측 AI 답변 전용 패널 -->
-    <div class="main-workspace">
-      <!-- 좌측: 지원사업 목록 패널 -->
-      <div class="panel">
-        <div class="filters">
-          <div class="filter-tabs" id="siteTabs">
-            <button class="tab active" onclick="setSiteFilter('ALL')">전체 보기</button>
-            <button class="tab" onclick="setSiteFilter('K-Startup')">K-Startup</button>
-            <button class="tab" onclick="setSiteFilter('기업마당')">기업마당</button>
-            <button class="tab" onclick="setSiteFilter('경기기업비서(이지비즈)')">경기기업비서</button>
-            <button class="tab" onclick="setSiteFilter('한국콘텐츠진흥원(KOCCA)')">한국콘텐츠진흥원</button>
-            <button class="tab" onclick="setSiteFilter('DELETED')" style="color:#dc2626;">🗑️ 삭제(제외)함</button>
-          </div>
-          <input type="text" class="search-input" id="searchInput" placeholder="공고명, 기관명, 키워드 검색..." oninput="renderTable()" />
+    <!-- 지원사업 목록 패널 -->
+    <div class="panel">
+      <div class="filters">
+        <div class="filter-tabs" id="siteTabs">
+          <button class="tab active" onclick="setSiteFilter('ALL')">전체 보기</button>
+          <button class="tab" onclick="setSiteFilter('K-Startup')">K-Startup</button>
+          <button class="tab" onclick="setSiteFilter('기업마당')">기업마당</button>
+          <button class="tab" onclick="setSiteFilter('경기기업비서(이지비즈)')">경기기업비서</button>
+          <button class="tab" onclick="setSiteFilter('한국콘텐츠진흥원(KOCCA)')">한국콘텐츠진흥원</button>
+          <button class="tab" onclick="setSiteFilter('DELETED')" style="color:#dc2626;">🗑️ 삭제(제외)함</button>
         </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th style="width:140px;">출처 / 기관</th>
-              <th>지원사업 공고명 ('📄 개요' 클릭 시 질문창 및 질문기록 표시)</th>
-              <th style="width:145px;">접수기간 / 등록일</th>
-              <th style="width:275px;text-align:center;">개요·AI질문 / 원문 / 삭제</th>
-            </tr>
-          </thead>
-          <tbody id="tableBody"></tbody>
-        </table>
+        <input type="text" class="search-input" id="searchInput" placeholder="공고명, 기관명, 키워드 검색..." oninput="renderTable()" />
       </div>
 
-      <!-- 우측: AI 답변 전용 고정 패널 -->
-      <div class="ai-side-panel" id="aiSidePanel">
-        <div class="ai-side-header">
-          <h3>🤖 AI 공고 분석 & 답변 창</h3>
-          <button class="btn" style="background:rgba(255,255,255,0.2);color:#fff;padding:4px 9px;font-size:11px;" onclick="copyCurrentAiAnswer()">📋 답변 복사</button>
-        </div>
-        <div class="ai-side-meta" id="aiSideMeta">
-          <span style="color:#6b7280;">좌측 목록에서 공고의 <strong>[🤖 AI 질문]</strong>을 누르거나 질문을 입력하시면 이 공간에 상세 답변이 표시됩니다.</span>
-        </div>
-        <div class="ai-side-body" id="aiSideBody">💡 <strong>사용 팁:</strong>
-1. 각 공고의 <strong>[📄 개요 ▼]</strong> 또는 <strong>[🤖 AI 질문]</strong>을 누르세요.
-2. 추천 질문 버튼을 클릭하거나 궁금한 내용을 질문하면, 이곳 우측 패널에 AI의 분석 답변이 넓고 보기 편하게 표시됩니다.
-3. 공고 아래(기존 답변 자리)에는 <strong>내가 질문했던 기록</strong>이 차곡차곡 누적되며, 기록을 클릭하면 언제든 다시 답변을 볼 수 있습니다!</div>
-        <div class="ai-side-footer" id="aiSideFooter" style="display:none;">
-          <input type="text" id="sideFollowupInput" class="ai-input" placeholder="이 공고에 대해 추가 질문 입력..." onkeydown="if(event.key==='Enter') askFollowupFromSide()" />
-          <button class="btn btn-purple" style="padding:7px 12px;font-size:12px;white-space:nowrap;" onclick="askFollowupFromSide()">질문하기</button>
-        </div>
-      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:150px;">출처 / 기관</th>
+            <th>지원사업 공고명 ('📄 개요' 클릭 시 좌측 개요·질문기록 + 우측 AI 답변창 확장)</th>
+            <th style="width:170px;">접수기간 / 등록일</th>
+            <th style="width:280px;text-align:center;">개요·AI질문 / 원문 / 삭제</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
     </div>
   </div>
 
@@ -563,7 +558,7 @@
     <div class="modal">
       <h3 style="margin:0 0 10px 0;font-size:17px;">🤖 AI 질문하기 (Google Gemini API 키 설정)</h3>
       <p style="font-size:13px;color:#4b5563;line-height:1.55;margin-bottom:12px;">
-        무료 <strong>Google Gemini API 키</strong>를 1회 등록해 두시면, 각 공고에서 질문할 때마다 우측 전용 패널에 2~3초 만에 즉시 답변이 표시되고 질문 기록이 누적 저장됩니다!
+        무료 <strong>Google Gemini API 키</strong>를 1회 등록해 두시면, 각 공고에서 질문할 때마다 우측 답변 영역에 즉시 답변이 표시되고 질문 기록이 누적 저장됩니다!
       </p>
       <div style="margin-bottom:12px;">
         <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size:13px;color:#7c3aed;font-weight:700;">
@@ -624,8 +619,6 @@
 
     // 공고별 질문/답변 누적 기록 { [itemId]: [ { id, question, answer, time } ] }
     let qaHistoryMap = {};
-    let currentActiveItemId = null;
-    let currentActiveSafeId = null;
 
     function loadQaHistory() {
       try {
@@ -654,6 +647,38 @@
       localStorage.setItem("mbk_local_keywords", JSON.stringify(serverData.keywords));
       localStorage.setItem("mbk_local_exclude_keywords", JSON.stringify(serverData.exclude_keywords));
       localStorage.setItem("mbk_local_custom_sites", JSON.stringify(serverData.custom_sites));
+    }
+
+    /**
+     * 한 줄로 붙어있는 공고 개요 텍스트를 주요 항목별로 줄바꿈하고 라벨을 강조합니다.
+     */
+    function formatSummaryHtml(rawText) {
+      if (!rawText) return "상세 내용은 [공고 보기]를 눌러 원문에서 확인해 주세요.";
+      let text = escapeHtml(rawText);
+
+      // 불필요한 머리말 정리
+      text = text.replace(/^신청방법 및 대상\s*/, "");
+
+      // 주요 섹션 라벨 앞에서 줄바꿈 및 뱃지 스타일 적용
+      const labels = [
+        "신청기간", "접수기간", "공고기간", "신청방법", "접수방법", "신청대상", "지원대상",
+        "제외대상", "신청 시 요청하는 정보", "사업개요", "공고 개요", "지원내용", "지원규모",
+        "소관부처·지자체", "소관부처", "사업수행기관", "수행기관", "문의처", "진행구분", "관련사이트"
+      ];
+
+      labels.forEach(label => {
+        const reg = new RegExp(`(?:^|\\s+)(${label})(?=\\s)`, "g");
+        text = text.replace(reg, `<br><span class="summary-label">$1</span>`);
+      });
+
+      // 기호(※, ☞, ㅇ, □, ■, - ) 앞에서 줄바꿈 처리
+      text = text.replace(/\s+(※|☞|□|■|ㅇ(?=\s))/g, "<br>$1");
+      text = text.replace(/\s+(-\s)/g, "<br>&nbsp;&nbsp;$1");
+
+      // 맨 앞 불필요한 <br> 제거
+      text = text.replace(/^(<br>\s*)+/, "");
+
+      return text;
     }
 
     async function loadData() {
@@ -704,7 +729,7 @@
       if (pendingAskItemId) {
         const safeId = pendingAskItemId.replace(/[^A-Za-z0-9_-]/g, "_");
         openAiQuestionBox(pendingAskItemId, safeId);
-        const rowEl = document.getElementById("sum_" + safeId);
+        const rowEl = document.getElementById("detailrow_" + safeId);
         if (rowEl) rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }
@@ -869,100 +894,66 @@
       renderTable();
     }
 
-    function toggleSummary(safeId) {
-      const box = document.getElementById("sum_" + safeId);
+    function toggleSummary(itemId, safeId) {
+      const detailRow = document.getElementById("detailrow_" + safeId);
       const btn = document.getElementById("sumbtn_" + safeId);
-      if (!box) return;
-      const isOpen = box.classList.toggle("open");
+      if (!detailRow) return;
+      const isOpen = detailRow.classList.toggle("open");
       if (btn) {
         btn.innerHTML = isOpen ? "📄 개요 닫기 ▲" : "📄 개요 ▼";
       }
-    }
-
-    function selectPostForSidePanel(itemId, safeId) {
-      currentActiveItemId = itemId;
-      currentActiveSafeId = safeId;
-
-      document.querySelectorAll("tbody tr").forEach(tr => tr.classList.remove("selected-row"));
-      const row = document.getElementById("row_" + safeId);
-      if (row) row.classList.add("selected-row");
-
-      const item = serverData.items.find(i => i.id === itemId);
-      if (!item) return;
-
-      document.getElementById("aiSideMeta").innerHTML = `
-        <div style="font-size:11px;color:#6d28d9;font-weight:700;margin-bottom:2px;">[${escapeHtml(item.site)}] ${escapeHtml(item.agency || '')}</div>
-        <div style="font-weight:700;color:#111827;line-height:1.4;">${escapeHtml(item.title)}</div>
-      `;
-      document.getElementById("aiSideFooter").style.display = "flex";
-
-      const history = qaHistoryMap[itemId] || [];
-      if (history.length > 0) {
-        showHistoryEntryInSidePanel(itemId, history[history.length - 1].id);
-      } else {
-        document.getElementById("aiSideBody").textContent =
-          `📌 아직 이 공고에 대해 질문한 기록이 없습니다.\n\n좌측 공고 아래의 추천 질문 버튼을 누르거나 아래 입력창에 궁금한 점을 입력해 보세요!`;
+      if (isOpen) {
+        renderPostHistoryList(itemId, safeId);
       }
     }
 
     function openAiQuestionBox(itemId, safeId) {
-      const box = document.getElementById("sum_" + safeId);
+      const detailRow = document.getElementById("detailrow_" + safeId);
       const btn = document.getElementById("sumbtn_" + safeId);
-      if (box && !box.classList.contains("open")) {
-        box.classList.add("open");
+      if (detailRow && !detailRow.classList.contains("open")) {
+        detailRow.classList.add("open");
         if (btn) btn.innerHTML = "📄 개요 닫기 ▲";
       }
-      selectPostForSidePanel(itemId, safeId);
+      renderPostHistoryList(itemId, safeId);
       const inp = document.getElementById("aiinp_" + safeId);
       if (inp) inp.focus();
     }
 
     function renderPostHistoryList(itemId, safeId, activeEntryId = null) {
       const container = document.getElementById("hist_" + safeId);
+      const qbar = document.getElementById("aiqbar_" + safeId);
+      const ansBody = document.getElementById("aibody_" + safeId);
       if (!container) return;
+
       const list = qaHistoryMap[itemId] || [];
       if (list.length === 0) {
-        container.innerHTML = `<div style="font-size:12px;color:#9ca3af;padding:4px 0;">💬 아직 질문 기록이 없습니다. 질문을 입력하면 이곳에 질문 기록이 누적됩니다.</div>`;
+        container.innerHTML = `<div style="font-size:12px;color:#9ca3af;padding:4px 0;">💬 아직 질문 기록이 없습니다. 질문을 입력하면 이곳에 질문 기록이 누적되고 우측 창에 답변이 표시됩니다.</div>`;
         return;
+      }
+
+      const targetEntry = activeEntryId
+        ? (list.find(e => e.id === activeEntryId) || list[list.length - 1])
+        : list[list.length - 1];
+
+      if (targetEntry && qbar && ansBody) {
+        qbar.innerHTML = `🙋 질문: ${escapeHtml(targetEntry.question)} <span style="font-weight:400;font-size:11px;color:#6b7280;">(${escapeHtml(targetEntry.time)})</span>`;
+        ansBody.textContent = targetEntry.answer;
       }
 
       container.innerHTML = `
         <div style="font-size:12px;font-weight:700;color:#5b21b6;margin-bottom:2px;">
-          💬 질문 기록 (${list.length}건) <span style="font-weight:400;color:#6b7280;">- 클릭하면 우측 창에 답변이 표시됩니다</span>
+          💬 질문 기록 (${list.length}건) <span style="font-weight:400;color:#6b7280;">- 클릭하면 우측 창에 해당 답변이 표시됩니다</span>
         </div>
       ` + list.map((entry, idx) => {
-        const isAct = entry.id === activeEntryId;
+        const isAct = targetEntry && entry.id === targetEntry.id;
         return `
-          <div class="history-item ${isAct ? 'active' : ''}" onclick="showHistoryEntryInSidePanel('${itemId}', '${entry.id}')">
+          <div class="history-item ${isAct ? 'active' : ''}" onclick="renderPostHistoryList('${itemId}', '${safeId}', '${entry.id}')">
             <span class="history-q"><strong>Q${idx + 1}.</strong> ${escapeHtml(entry.question)}</span>
             <span class="history-time">${escapeHtml(entry.time)}</span>
             <button class="history-del" title="이 질문 기록 삭제" onclick="event.stopPropagation(); deleteHistoryEntry('${itemId}', '${safeId}', '${entry.id}')">×</button>
           </div>
         `;
       }).join("");
-    }
-
-    function showHistoryEntryInSidePanel(itemId, entryId) {
-      const item = serverData.items.find(i => i.id === itemId);
-      if (!item) return;
-      const safeId = item.id.replace(/[^A-Za-z0-9_-]/g, "_");
-      currentActiveItemId = itemId;
-      currentActiveSafeId = safeId;
-
-      const list = qaHistoryMap[itemId] || [];
-      const entry = list.find(e => e.id === entryId);
-      if (!entry) return;
-
-      document.getElementById("aiSideMeta").innerHTML = `
-        <div style="font-size:11px;color:#6d28d9;font-weight:700;margin-bottom:2px;">[${escapeHtml(item.site)}] ${escapeHtml(item.agency || '')}</div>
-        <div style="font-weight:700;color:#111827;line-height:1.4;">${escapeHtml(item.title)}</div>
-        <div style="margin-top:6px;padding:6px 10px;background:#ede9fe;border-radius:6px;color:#4c1d95;font-weight:600;font-size:12.5px;">
-          🙋 질문: ${escapeHtml(entry.question)} <span style="font-weight:400;font-size:11px;color:#6b7280;">(${escapeHtml(entry.time)})</span>
-        </div>
-      `;
-      document.getElementById("aiSideBody").textContent = entry.answer;
-      document.getElementById("aiSideFooter").style.display = "flex";
-      renderPostHistoryList(itemId, safeId, entryId);
     }
 
     function deleteHistoryEntry(itemId, safeId, entryId) {
@@ -973,22 +964,11 @@
       showToast("질문 기록을 삭제했습니다.");
     }
 
-    function askFollowupFromSide() {
-      if (!currentActiveItemId || !currentActiveSafeId) {
-        showToast("먼저 좌측 목록에서 질문할 공고를 선택해 주세요.");
-        return;
-      }
-      const sideInp = document.getElementById("sideFollowupInput");
-      const q = sideInp.value.trim();
-      if (!q) return;
-      sideInp.value = "";
-      askAiAboutPost(currentActiveItemId, currentActiveSafeId, q);
-    }
-
-    function copyCurrentAiAnswer() {
-      const txt = document.getElementById("aiSideBody").textContent || "";
-      navigator.clipboard.writeText(txt).then(() => {
-        showToast("📋 우측 패널의 AI 답변이 클립보드에 복사되었습니다!");
+    function copyInlineAiAnswer(safeId) {
+      const el = document.getElementById("aibody_" + safeId);
+      if (!el) return;
+      navigator.clipboard.writeText(el.textContent || "").then(() => {
+        showToast("📋 AI 답변이 클립보드에 복사되었습니다!");
       });
     }
 
@@ -1010,19 +990,15 @@
       }
 
       if (inp) inp.value = "";
-      currentActiveItemId = itemId;
-      currentActiveSafeId = safeId;
 
-      document.getElementById("aiSideMeta").innerHTML = `
-        <div style="font-size:11px;color:#6d28d9;font-weight:700;margin-bottom:2px;">[${escapeHtml(item.site)}] ${escapeHtml(item.agency || '')}</div>
-        <div style="font-weight:700;color:#111827;line-height:1.4;">${escapeHtml(item.title)}</div>
-        <div style="margin-top:6px;padding:6px 10px;background:#ede9fe;border-radius:6px;color:#4c1d95;font-weight:600;font-size:12.5px;">
-          🙋 질문: ${escapeHtml(question)}
-        </div>
-      `;
-      const sideBody = document.getElementById("aiSideBody");
-      sideBody.textContent = "⏳ AI가 공고 내용과 이전 질문 맥락을 분석하여 우측 창에 답변을 작성하고 있습니다...";
-      document.getElementById("aiSideFooter").style.display = "flex";
+      const qbar = document.getElementById("aiqbar_" + safeId);
+      const ansBody = document.getElementById("aibody_" + safeId);
+      if (qbar) {
+        qbar.innerHTML = `🙋 질문: ${escapeHtml(question)}`;
+      }
+      if (ansBody) {
+        ansBody.textContent = "⏳ AI가 공고 내용과 이전 질문 맥락을 분석하여 답변을 작성하고 있습니다...";
+      }
 
       const prevHistory = qaHistoryMap[itemId] || [];
       const historyContext = prevHistory.slice(-3).map((h, i) => `이전질문${i+1}: ${h.question}\n이전답변${i+1}: ${h.answer}`).join("\n\n");
@@ -1071,10 +1047,12 @@ ${question}`;
         qaHistoryMap[itemId].push(newEntry);
         saveQaHistory();
 
-        showHistoryEntryInSidePanel(itemId, newEntry.id);
+        renderPostHistoryList(itemId, safeId, newEntry.id);
       } catch (err) {
         console.error(err);
-        sideBody.textContent = `❌ AI 호출 실패: API 키가 올바른지 확인해 주세요. (우측 상단 [🤖 AI 질문(Gemini 키) 설정]에서 확인 가능)`;
+        if (ansBody) {
+          ansBody.textContent = `❌ AI 호출 실패: API 키가 올바른지 확인해 주세요. (상단 [🤖 AI 질문(Gemini 키) 설정]에서 확인 가능)`;
+        }
       }
     }
 
@@ -1178,7 +1156,7 @@ ${contextText}
         const badges = (item.matched_keywords || []).map(k => `<span class="badge">#${escapeHtml(k)}</span>`).join("");
         const isDeleted = serverData.deleted_ids.includes(item.id);
         const safeId = item.id.replace(/[^A-Za-z0-9_-]/g, "_");
-        const summaryText = escapeHtml(item.summary || "상세 내용은 [공고 보기]를 눌러 원문에서 확인해 주세요.");
+        const formattedSummary = formatSummaryHtml(item.summary);
         const qCount = (qaHistoryMap[item.id] || []).length;
         const qBadge = qCount > 0 ? `<span class="badge" style="background:#f3e8ff;color:#6d28d9;">💬 질문 ${qCount}</span>` : "";
 
@@ -1187,7 +1165,8 @@ ${contextText}
           : `<button class="btn btn-danger" style="padding:6px 9px;font-size:12px;" onclick="deleteItem('${item.id}')">🗑️ 삭제</button>`;
 
         return `
-          <tr id="row_${safeId}">
+          <!-- 상단 기본 행 -->
+          <tr class="main-row" id="row_${safeId}">
             <td>
               <strong>${escapeHtml(item.site)}</strong><br>
               <span style="font-size:12px;color:var(--muted);">${escapeHtml(item.agency || '')}</span>
@@ -1195,52 +1174,70 @@ ${contextText}
             <td>
               <div>${badges}${qBadge}</div>
               <a href="${item.url}" target="_blank" class="title-link">${escapeHtml(item.title)}</a>
-              <div id="sum_${safeId}" class="summary-box">
-                <div>
-                  <strong style="color:#1e3a8a;">📌 공고 개요 요약</strong><br>
-                  <div style="margin-top:4px;">${summaryText}</div>
-                </div>
-
-                <!-- AI에게 질문하기 & 누적 질문 기록 섹션 -->
-                <div class="ai-box">
-                  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
-                    <strong style="color:#6d28d9;font-size:13px;">🤖 이 공고에 대해 AI에게 질문하기 (답변은 우측 창에 표시)</strong>
-                    <div style="display:flex;gap:4px;">
-                      <button class="btn btn-outline" style="padding:3px 8px;font-size:11px;" onclick="copyAndOpenExternalAi('${item.id}', '${safeId}', 'chatgpt')">ChatGPT로 열기 ↗</button>
-                      <button class="btn btn-outline" style="padding:3px 8px;font-size:11px;" onclick="copyAndOpenExternalAi('${item.id}', '${safeId}', 'gemini')">Gemini로 열기 ↗</button>
-                    </div>
-                  </div>
-                  <div class="ai-quick-btns">
-                    <button class="ai-quick-btn" onclick="askAiAboutPost('${item.id}', '${safeId}', '이 사업의 지원 자격과 제외 대상을 핵심만 정리해 줘.')">✨ 지원 자격/대상 정리</button>
-                    <button class="ai-quick-btn" onclick="askAiAboutPost('${item.id}', '${safeId}', '지원 금액, 혜택, 지원 기간 등 핵심 지원 내용을 요약해 줘.')">💰 핵심 지원 내용 요약</button>
-                    <button class="ai-quick-btn" onclick="askAiAboutPost('${item.id}', '${safeId}', '우리 회사가 이 사업에 선정되려면 사업계획서나 신청 시 어떤 점을 강조해야 할까?')">📝 선정/신청 준비 전략</button>
-                  </div>
-                  <div class="ai-input-row">
-                    <input type="text" id="aiinp_${safeId}" class="ai-input" placeholder="궁금한 점을 입력하세요 (질문 기록은 아래에 누적되고 답변은 우측에 표시됩니다)" onkeydown="if(event.key==='Enter') askAiAboutPost('${item.id}', '${safeId}')" />
-                    <button class="btn btn-purple" style="padding:7px 14px;font-size:12px;white-space:nowrap;" onclick="askAiAboutPost('${item.id}', '${safeId}')">AI 질문하기</button>
-                  </div>
-                  <!-- 기존 답변 자리: 내가 질문했던 기록 누적 영역 -->
-                  <div id="hist_${safeId}" class="history-list"></div>
-                </div>
-              </div>
             </td>
             <td style="font-size:13px;color:#374151;white-space:nowrap;">
               ${escapeHtml(item.period || item.reg_date || '-')}
             </td>
             <td style="text-align:center;white-space:nowrap;">
-              <button id="sumbtn_${safeId}" class="btn btn-outline" style="padding:6px 9px;font-size:12px;margin-right:2px;" onclick="toggleSummary('${safeId}'); renderPostHistoryList('${item.id}', '${safeId}');">📄 개요 ▼</button>
-              <button class="btn btn-purple-light" style="padding:6px 9px;font-size:12px;margin-right:2px;" onclick="openAiQuestionBox('${item.id}', '${safeId}'); renderPostHistoryList('${item.id}', '${safeId}');">🤖 AI 질문</button>
+              <button id="sumbtn_${safeId}" class="btn btn-outline" style="padding:6px 9px;font-size:12px;margin-right:2px;" onclick="toggleSummary('${item.id}', '${safeId}')">📄 개요 ▼</button>
+              <button class="btn btn-purple-light" style="padding:6px 9px;font-size:12px;margin-right:2px;" onclick="openAiQuestionBox('${item.id}', '${safeId}')">🤖 AI 질문</button>
               <a href="${item.url}" target="_blank" class="btn btn-primary" style="padding:6px 9px;font-size:12px;margin-right:2px;">공고 보기</a>
               ${actionBtn}
             </td>
           </tr>
+
+          <!-- 펼쳐지는 상세 행 (가로 4열 전체를 사용하여 우측 빈 공간을 AI 답변창으로 100% 활용) -->
+          <tr class="detail-row" id="detailrow_${safeId}">
+            <td colspan="4">
+              <div class="expanded-grid">
+                <!-- 좌측: 항목별 줄바꿈된 공고 개요 + AI 질문 입력 및 누적 질문 기록 -->
+                <div>
+                  <div class="summary-card">
+                    <div style="font-weight:700;color:#1e3a8a;margin-bottom:8px;font-size:14px;">📌 공고 개요 요약 (항목별 정리)</div>
+                    <div>${formattedSummary}</div>
+                  </div>
+
+                  <div class="ai-box">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+                      <strong style="color:#6d28d9;font-size:13.5px;">🤖 이 공고에 대해 AI에게 질문하기</strong>
+                      <div style="display:flex;gap:4px;">
+                        <button class="btn btn-outline" style="padding:3px 8px;font-size:11px;" onclick="copyAndOpenExternalAi('${item.id}', '${safeId}', 'chatgpt')">ChatGPT로 열기 ↗</button>
+                        <button class="btn btn-outline" style="padding:3px 8px;font-size:11px;" onclick="copyAndOpenExternalAi('${item.id}', '${safeId}', 'gemini')">Gemini로 열기 ↗</button>
+                      </div>
+                    </div>
+                    <div class="ai-quick-btns">
+                      <button class="ai-quick-btn" onclick="askAiAboutPost('${item.id}', '${safeId}', '이 사업의 지원 자격과 제외 대상을 핵심만 정리해 줘.')">✨ 지원 자격/대상 정리</button>
+                      <button class="ai-quick-btn" onclick="askAiAboutPost('${item.id}', '${safeId}', '지원 금액, 혜택, 지원 기간 등 핵심 지원 내용을 요약해 줘.')">💰 핵심 지원 내용 요약</button>
+                      <button class="ai-quick-btn" onclick="askAiAboutPost('${item.id}', '${safeId}', '우리 회사가 이 사업에 선정되려면 사업계획서나 신청 시 어떤 점을 강조해야 할까?')">📝 선정/신청 준비 전략</button>
+                    </div>
+                    <div class="ai-input-row">
+                      <input type="text" id="aiinp_${safeId}" class="ai-input" placeholder="궁금한 점을 입력하세요 (답변은 바로 오른쪽 창에 표시됩니다)" onkeydown="if(event.key==='Enter') askAiAboutPost('${item.id}', '${safeId}')" />
+                      <button class="btn btn-purple" style="padding:7px 14px;font-size:12px;white-space:nowrap;" onclick="askAiAboutPost('${item.id}', '${safeId}')">AI 질문하기</button>
+                    </div>
+                    <!-- 누적 질문 기록 -->
+                    <div id="hist_${safeId}" class="history-list"></div>
+                  </div>
+                </div>
+
+                <!-- 우측(기존 비어있던 빨간 네모 공간): 이 공고 전용 AI 답변 표시 창 -->
+                <div class="inline-ai-panel">
+                  <div class="inline-ai-header">
+                    <span>🤖 AI 공고 분석 & 답변 창</span>
+                    <button class="btn" style="background:rgba(255,255,255,0.2);color:#fff;padding:3px 8px;font-size:11px;" onclick="copyInlineAiAnswer('${safeId}')">📋 답변 복사</button>
+                  </div>
+                  <div class="inline-ai-qbar" id="aiqbar_${safeId}">
+                    좌측에서 추천 질문을 누르거나 질문을 입력하시면 이곳에 상세 답변이 표시됩니다.
+                  </div>
+                  <div class="inline-ai-body" id="aibody_${safeId}">💡 왼쪽의 [✨ 지원 자격/대상 정리], [💰 핵심 지원 내용 요약] 버튼을 누르거나 궁금한 점을 질문해 보세요.
+
+• 질문했던 내역은 왼쪽 아래 [💬 질문 기록]에 차곡차곡 누적됩니다.
+• 누적된 질문 기록(Q1, Q2...)을 클릭하면 언제든 이곳에 해당 답변이 다시 표시됩니다.</div>
+                </div>
+              </div>
+            </td>
+          </tr>
         `;
       }).join("");
-
-      list.forEach(item => {
-        const safeId = item.id.replace(/[^A-Za-z0-9_-]/g, "_");
-        renderPostHistoryList(item.id, safeId);
-      });
     }
 
     function openAiModal() {
@@ -1255,7 +1252,7 @@ ${contextText}
       if (val) {
         localStorage.setItem("mbk_gemini_api_key", val);
         closeAiModal();
-        showToast("✅ Gemini API 키가 저장되었습니다! 이제 각 공고에서 질문하면 우측 패널에 답변이 표시됩니다.");
+        showToast("✅ Gemini API 키가 저장되었습니다! 이제 각 공고에서 질문하면 우측 영역에 답변이 표시됩니다.");
       }
     }
 
