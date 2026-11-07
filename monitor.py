@@ -863,7 +863,8 @@ def load_server_db() -> Dict:
     return {
         "updated_at": "",
         "items": [],
-        "deleted_ids": []
+        "deleted_ids": [],
+        "favorite_ids": []
     }
 
 
@@ -877,6 +878,8 @@ def save_server_db(db_data: Dict, config: Dict) -> None:
     db_data["auto_archive_expired"] = bool(config.get("auto_archive_expired", True))
     db_data["sites"] = config.get("sites", {})
     db_data["custom_sites"] = config.get("custom_sites", [])
+    if "favorite_ids" not in db_data:
+        db_data["favorite_ids"] = []
     with open(DATA_JSON_PATH, "w", encoding="utf-8") as f:
         json.dump(db_data, f, ensure_ascii=False, indent=2)
 
@@ -1307,11 +1310,21 @@ def main():
                     p["support_count"] = "공고문 참조"
                     p["support_amount"] = "공고문 참조"
 
-    # 전체 아이템(활성 + 삭제/만료 보관분 최대 500건) 저장
-    all_stored_items = list(existing_items_map.values())[:500]
+    # 전체 아이템(활성 + 삭제/만료 보관분 최대 500건) 저장 (관심공고 최상단 정렬 반영)
+    favorite_ids_list = server_db.get("favorite_ids", [])
+    fav_set = set(favorite_ids_list)
+    all_stored_items = list(existing_items_map.values())
+    all_stored_items.sort(
+        key=lambda x: (
+            0 if x.get("id") in fav_set else 1,
+            favorite_ids_list.index(x["id"]) if x.get("id") in fav_set else 999999,
+        )
+    )
+    all_stored_items = all_stored_items[:500]
     active_items_list = [item for item in all_stored_items if item.get("id") not in deleted_ids]
     server_db["items"] = all_stored_items
     server_db["deleted_ids"] = list(deleted_ids)
+    server_db["favorite_ids"] = favorite_ids_list
     save_server_db(server_db, config)
     print(
         f"[서버 DB 갱신] 진행중 공고: {len(active_items_list)}건 | "

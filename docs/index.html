@@ -268,6 +268,30 @@
     tr.main-row:hover td {
       background: #f8fafc;
     }
+    tr.main-row.fav-row td {
+      background: #fffdf0;
+    }
+    tr.main-row.fav-row:hover td {
+      background: #fef9c3;
+    }
+    .fav-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      padding: 2px 4px;
+      color: #d1d5db;
+      transition: transform 0.15s, color 0.15s;
+      vertical-align: middle;
+    }
+    .fav-btn:hover {
+      transform: scale(1.2);
+      color: #f59e0b;
+    }
+    .fav-btn.active {
+      color: #f59e0b;
+    }
     tr.detail-row {
       display: none;
     }
@@ -607,6 +631,7 @@
       <div class="filters">
         <div class="filter-tabs" id="siteTabs">
           <button class="tab active" onclick="setSiteFilter('ALL')">전체 보기</button>
+          <button class="tab" id="favTabBtn" onclick="setSiteFilter('FAV')" style="color:#b45309;border-color:#fde68a;background:#fffbeb;">⭐ 관심공고 (0)</button>
           <button class="tab" onclick="setSiteFilter('K-Startup')">K-Startup</button>
           <button class="tab" onclick="setSiteFilter('기업마당')">기업마당</button>
           <button class="tab" onclick="setSiteFilter('경기기업비서(이지비즈)')">경기기업비서</button>
@@ -624,8 +649,9 @@
       <table>
         <thead>
           <tr>
-            <th style="width:42px;text-align:center;">
-              <input type="checkbox" id="selectAllCheckbox" style="width:16px;height:16px;cursor:pointer;" onclick="toggleSelectAll(this.checked)" title="현재 목록 전체 선택/해제" />
+            <th style="width:68px;text-align:center;">
+              <input type="checkbox" id="selectAllCheckbox" style="width:16px;height:16px;cursor:pointer;vertical-align:middle;" onclick="toggleSelectAll(this.checked)" title="현재 목록 전체 선택/해제" />
+              <span style="font-size:12px;color:#b45309;margin-left:2px;" title="별표(☆) 클릭 시 관심공고로 지정되어 최상단에 고정됩니다">⭐</span>
             </th>
             <th style="width:150px;">출처 / 기관</th>
             <th>지원사업 공고명 ('📄 개요' 클릭 시 좌측 개요·질문기록 + 우측 AI 답변창 확장)</th>
@@ -688,6 +714,7 @@
       updated_at: "",
       items: [],
       deleted_ids: [],
+      favorite_ids: [],
       search_days: 30,
       auto_archive_expired: true,
       keywords: ["AI", "인공지능", "AX", "로봇", "창업", "벤처", "스타트업"],
@@ -917,9 +944,27 @@
       document.getElementById("unsavedBanner").style.display = "flex";
       document.getElementById("syncBtn").style.display = "inline-flex";
       localStorage.setItem("mbk_local_deleted_ids", JSON.stringify(serverData.deleted_ids));
+      localStorage.setItem("mbk_local_favorite_ids", JSON.stringify(serverData.favorite_ids));
       localStorage.setItem("mbk_local_keywords", JSON.stringify(serverData.keywords));
       localStorage.setItem("mbk_local_exclude_keywords", JSON.stringify(serverData.exclude_keywords));
       localStorage.setItem("mbk_local_custom_sites", JSON.stringify(serverData.custom_sites));
+    }
+
+    function toggleFavorite(id) {
+      const idx = serverData.favorite_ids.indexOf(id);
+      const isAdding = idx === -1;
+      if (isAdding) {
+        serverData.favorite_ids.unshift(id);
+      } else {
+        serverData.favorite_ids.splice(idx, 1);
+      }
+      markChanged();
+      renderTable();
+      updateHeaderStatus();
+      showToast(isAdding ? "⭐ 관심공고로 체크되어 목록 최상단에 배치되었습니다! (마감일 경과 시에는 삭제함으로 자동 이동됩니다)" : "관심공고 체크가 해제되었습니다.");
+      if (localStorage.getItem("mbk_github_token")) {
+        syncToGitHub(true);
+      }
     }
 
     /**
@@ -1020,6 +1065,7 @@
           serverData.updated_at = json.updated_at || "";
           serverData.items = json.items || [];
           serverData.deleted_ids = json.deleted_ids || [];
+          serverData.favorite_ids = json.favorite_ids || [];
           if (typeof json.search_days === "number") serverData.search_days = json.search_days;
           if (typeof json.auto_archive_expired === "boolean") serverData.auto_archive_expired = json.auto_archive_expired;
           if (json.keywords) serverData.keywords = json.keywords;
@@ -1043,12 +1089,17 @@
         if (!serverData.deleted_ids.includes(id)) serverData.deleted_ids.push(id);
       });
 
+      const localFav = JSON.parse(localStorage.getItem("mbk_local_favorite_ids") || "null");
+      if (localFav && Array.isArray(localFav)) {
+        serverData.favorite_ids = localFav;
+      }
+
       const localCustomSites = JSON.parse(localStorage.getItem("mbk_local_custom_sites") || "null");
       if (localCustomSites && localCustomSites.length > serverData.custom_sites.length) {
         serverData.custom_sites = localCustomSites;
       }
 
-      // 신청기간(마감일) 지난 공고 자동 삭제(제외)함 이동 처리
+      // 신청기간(마감일) 지난 공고 자동 삭제(제외)함 이동 처리 (관심공고라도 마감일이 지나면 자동 이동)
       const autoMovedCount = autoArchiveExpiredItems();
       if (autoMovedCount > 0) {
         showToast(`⏰ 신청기간이 지난 공고 ${autoMovedCount}건을 자동으로 삭제(제외)함으로 이동했습니다.`);
@@ -1085,13 +1136,18 @@
 
     function updateHeaderStatus() {
       const activeCount = serverData.items.filter(i => !serverData.deleted_ids.includes(i.id)).length;
+      const favActiveCount = serverData.items.filter(i => serverData.favorite_ids.includes(i.id) && !serverData.deleted_ids.includes(i.id)).length;
       const delItemsCount = serverData.items.filter(i => serverData.deleted_ids.includes(i.id)).length;
       const expiredDelCount = serverData.items.filter(i => i.expired && serverData.deleted_ids.includes(i.id)).length;
       document.getElementById("statusText").innerHTML =
-        `마지막 서버 업데이트: <strong>${serverData.updated_at || '방금 전'}</strong> | 진행중 공고: <strong>${activeCount}건</strong> | 삭제(제외)함: <strong>${delItemsCount}건</strong> (기간만료 자동이동 ${expiredDelCount}건)`;
+        `마지막 서버 업데이트: <strong>${serverData.updated_at || '방금 전'}</strong> | 진행중 공고: <strong>${activeCount}건</strong> (⭐ 관심 <strong>${favActiveCount}건</strong>) | 삭제(제외)함: <strong>${delItemsCount}건</strong> (기간만료 자동이동 ${expiredDelCount}건)`;
       const delTab = document.getElementById("deletedTabBtn");
       if (delTab) {
         delTab.innerHTML = `🗑️ 삭제(제외)함 (${delItemsCount})`;
+      }
+      const favTab = document.getElementById("favTabBtn");
+      if (favTab) {
+        favTab.innerHTML = `⭐ 관심공고 (${favActiveCount})`;
       }
     }
 
@@ -1245,7 +1301,14 @@
       selectedIds.clear();
       lastCheckedIndex = null;
       document.querySelectorAll("#siteTabs .tab").forEach(btn => {
-        btn.classList.toggle("active", btn.textContent.includes(site === "ALL" ? "전체 보기" : site === "DELETED" ? "삭제(제외)함" : site.split("(")[0]));
+        const matchLabel = site === "ALL"
+          ? "전체 보기"
+          : site === "FAV"
+            ? "관심공고"
+            : site === "DELETED"
+              ? "삭제(제외)함"
+              : site.split("(")[0];
+        btn.classList.toggle("active", btn.textContent.includes(matchLabel));
       });
       renderTable();
     }
@@ -1580,6 +1643,8 @@ ${contextText}
       let list = [];
       if (currentSiteFilter === "DELETED") {
         list = serverData.items.filter(item => serverData.deleted_ids.includes(item.id));
+      } else if (currentSiteFilter === "FAV") {
+        list = serverData.items.filter(item => !serverData.deleted_ids.includes(item.id) && serverData.favorite_ids.includes(item.id));
       } else {
         list = serverData.items.filter(item => !serverData.deleted_ids.includes(item.id));
         if (currentSiteFilter !== "ALL") {
@@ -1608,6 +1673,18 @@ ${contextText}
         );
       }
 
+      // ⭐ 관심체크된 공고를 목록 최상단에 배치 (관심공고 간에는 체크한 순서 유지)
+      const favSet = new Set(serverData.favorite_ids || []);
+      list = [...list].sort((a, b) => {
+        const aFav = favSet.has(a.id) ? 1 : 0;
+        const bFav = favSet.has(b.id) ? 1 : 0;
+        if (aFav !== bFav) return bFav - aFav;
+        if (aFav && bFav) {
+          return serverData.favorite_ids.indexOf(a.id) - serverData.favorite_ids.indexOf(b.id);
+        }
+        return 0;
+      });
+
       currentRenderedIds = list.map(i => i.id);
       updateBulkButton();
 
@@ -1625,11 +1702,13 @@ ${contextText}
       tbody.innerHTML = list.map((item, idx) => {
         const badges = (item.matched_keywords || []).map(k => `<span class="badge">#${escapeHtml(k)}</span>`).join("");
         const isDeleted = serverData.deleted_ids.includes(item.id);
+        const isFav = favSet.has(item.id);
         const isChecked = selectedIds.has(item.id) ? "checked" : "";
         const safeId = item.id.replace(/[^A-Za-z0-9_-]/g, "_");
         const formattedSummary = formatSummaryHtml(item);
         const qCount = (qaHistoryMap[item.id] || []).length;
         const qBadge = qCount > 0 ? `<span class="badge" style="background:#f3e8ff;color:#6d28d9;">💬 질문 ${qCount}</span>` : "";
+        const favBadge = isFav ? `<span class="badge" style="background:#fef3c7;color:#b45309;border:1px solid #fde68a;">⭐ 관심공고</span>` : "";
 
         // 마감일 D-Day 및 기간만료 뱃지 생성
         const { endDate } = extractItemDates(item);
@@ -1653,16 +1732,19 @@ ${contextText}
 
         return `
           <!-- 상단 기본 행 -->
-          <tr class="main-row" id="row_${safeId}">
-            <td style="text-align:center;">
-              <input type="checkbox" ${isChecked} style="width:16px;height:16px;cursor:pointer;" onclick="toggleRowCheckbox(event, '${item.id}', ${idx})" />
+          <tr class="main-row ${isFav && !isDeleted ? 'fav-row' : ''}" id="row_${safeId}">
+            <td style="text-align:center;white-space:nowrap;">
+              <input type="checkbox" ${isChecked} style="width:16px;height:16px;cursor:pointer;vertical-align:middle;" onclick="toggleRowCheckbox(event, '${item.id}', ${idx})" />
+              <button class="fav-btn ${isFav ? 'active' : ''}" onclick="toggleFavorite('${item.id}')" title="${isFav ? '관심공고 해제' : '관심공고 체크 (목록 최상단 배치)'}">
+                ${isFav ? '⭐' : '☆'}
+              </button>
             </td>
             <td>
               <strong>${escapeHtml(item.site)}</strong><br>
               <span style="font-size:12px;color:var(--muted);">${escapeHtml(item.agency || '')}</span>
             </td>
             <td>
-              <div>${badges}${statusBadge}${qBadge}</div>
+              <div>${favBadge}${badges}${statusBadge}${qBadge}</div>
               <a href="${item.url}" target="_blank" class="title-link">${escapeHtml(item.title)}</a>
             </td>
             <td style="font-size:13px;color:#374151;white-space:nowrap;">
@@ -1821,6 +1903,7 @@ ${contextText}
           auto_archive_expired: serverData.auto_archive_expired,
           sites: serverData.sites,
           custom_sites: serverData.custom_sites,
+          favorite_ids: serverData.favorite_ids,
           deleted_ids: serverData.deleted_ids,
           items: storedItems
         };
