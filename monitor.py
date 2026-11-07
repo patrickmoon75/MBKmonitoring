@@ -54,6 +54,56 @@ def fetch_text(url: str, data: bytes = None, extra_headers: Dict[str, str] = Non
         return raw.decode("utf-8", errors="ignore")
 
 
+def normalize_date_str(s: str) -> str:
+    """다양한 날짜 표기(YYYY-MM-DD, YY.MM.DD 등)를 YYYY-MM-DD 형식으로 변환합니다."""
+    if not s:
+        return ""
+    m = re.search(r"(20\d{2}|\d{2})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})", str(s))
+    if not m:
+        return ""
+    y_str, mo_str, d_str = m.group(1), m.group(2), m.group(3)
+    year = int(y_str) if len(y_str) == 4 else 2000 + int(y_str)
+    month = int(mo_str)
+    day = int(d_str)
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return ""
+    return f"{year:04d}-{month:02d}-{day:02d}"
+
+
+def extract_post_dates(period_str: str, reg_date_str: str) -> Tuple[str, str, str]:
+    """
+    공고의 period 및 reg_date 문자열에서 (start_date, end_date, reg_date_norm)을 추출합니다.
+    period에 '~'가 포함된 기간 형식일 때만 두 번째 날짜를 마감일(end_date)로 인식합니다.
+    """
+    reg_norm = normalize_date_str(reg_date_str)
+    p_str = str(period_str or "")
+    matches = re.findall(r"(20\d{2}|\d{2})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})", p_str)
+    norm_dates = []
+    for y_str, mo_str, d_str in matches:
+        year = int(y_str) if len(y_str) == 4 else 2000 + int(y_str)
+        month, day = int(mo_str), int(d_str)
+        if 1 <= month <= 12 and 1 <= day <= 31:
+            norm_dates.append(f"{year:04d}-{month:02d}-{day:02d}")
+
+    start_date = ""
+    end_date = ""
+    if len(norm_dates) >= 2:
+        start_date = norm_dates[0]
+        end_date = norm_dates[-1]
+    elif len(norm_dates) == 1:
+        if "~" in p_str:
+            end_date = norm_dates[0]
+        else:
+            start_date = norm_dates[0]
+
+    if not reg_norm and start_date:
+        reg_norm = start_date
+    if not start_date and reg_norm:
+        start_date = reg_norm
+
+    return start_date, end_date, reg_norm
+
+
 def match_keywords(text: str, keywords: List[str], exclude_keywords: List[str]) -> List[str]:
     """제목 텍스트에서 포함 키워드 및 제외 키워드를 검사합니다."""
     if not text:
@@ -519,6 +569,8 @@ def save_server_db(db_data: Dict, config: Dict) -> None:
     db_data["updated_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     db_data["keywords"] = config.get("keywords", [])
     db_data["exclude_keywords"] = config.get("exclude_keywords", [])
+    db_data["search_days"] = int(config.get("search_days", 30))
+    db_data["auto_archive_expired"] = bool(config.get("auto_archive_expired", True))
     db_data["sites"] = config.get("sites", {})
     db_data["custom_sites"] = config.get("custom_sites", [])
     with open(DATA_JSON_PATH, "w", encoding="utf-8") as f:
@@ -779,9 +831,18 @@ def main():
     keywords = config.get("keywords", [])
     exclude_keywords = config.get("exclude_keywords", [])
     max_pages = int(config.get("max_pages_per_site", 3))
+    search_days = int(config.get("search_days", 30))
+    auto_archive_expired = bool(config.get("auto_archive_expired", True))
     sites_cfg = config.get("sites", {})
 
-    print(f"=== 지원사업 모니터링 시작 (키워드: {', '.join(keywords)}) ===")
+    today_date = datetime.date.today()
+    today_str = today_date.strftime("%Y-%m-%d")
+    cutoff_date_str = (
+        (today_date - datetime.timedelta(days=search_days)).strftime("%Y-%m-%d")
+        if search_days > 0 else ""
+    )
+
+    print(f"=== 지원사업 모니터링 시작 (키워드: {', '.join(keywords)} | 검색기간: 최근 {search_days if search_days > 0 else '전체'}일) ===")
 
     all_posts: List[Dict] = []
     if sites_cfg.get("kstartup", {}).get("enabled", True):
@@ -812,29 +873,55 @@ def main():
 
     server_db = load_server_db()
     deleted_ids = set(server_db.get("deleted_ids", []))
-    existing_items_map = {
-        item["id"]: item
-        for item in server_db.get("items", [])
-        if item.get("id") not in deleted_ids
-    }
+    existing_items_map: Dict[str, Dict] = {}
+    expired_auto_moved = 0
+
+    for item in server_db.get("items", []):
+        item_id = item.get("id")
+        if not item_id:
+            continue
+        s_date, e_date, r_date = extract_post_dates(item.get("period", ""), item.get("reg_date", ""))
+        item["start_date"] = s_date
+        item["end_date"] = e_date
+        item["reg_date_norm"] = r_date
+        if auto_archive_expired and e_date and e_date < today_str:
+            item["expired"] = True
+            if item_id not in deleted_ids:
+                deleted_ids.add(item_id)
+                expired_auto_moved += 1
+        existing_items_map[item_id] = item
 
     seen_ids = set() if args.ignore_seen else load_seen_ids()
     seen_ids.update(deleted_ids)
 
     matched_items: List[Dict] = []
     new_seen_ids = set(seen_ids)
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
 
     posts_needing_summary: List[Dict] = []
 
     for post in all_posts:
-        if post["id"] in deleted_ids:
-            continue
-
         target_text = post["title"]
         matched_kws = match_keywords(target_text, keywords, exclude_keywords)
         if not matched_kws:
             continue
+
+        s_date, e_date, r_date = extract_post_dates(post.get("period", ""), post.get("reg_date", ""))
+        post["start_date"] = s_date
+        post["end_date"] = e_date
+        post["reg_date_norm"] = r_date
+
+        # 검색기간(search_days) 필터: 등록일(또는 시작일)이 검색기간 이전이면 제외 (단, 기존 보관 항목은 유지)
+        ref_date = r_date or s_date
+        if cutoff_date_str and ref_date and ref_date < cutoff_date_str and post["id"] not in existing_items_map:
+            continue
+
+        # 신청 마감일이 지난 공고는 자동으로 삭제(제외)함으로 이동
+        is_expired = bool(auto_archive_expired and e_date and e_date < today_str)
+        if is_expired:
+            post["expired"] = True
+            if post["id"] not in deleted_ids:
+                deleted_ids.add(post["id"])
+                expired_auto_moved += 1
 
         prev_item = existing_items_map.get(post["id"], {})
         post["matched_keywords"] = matched_kws
@@ -843,12 +930,15 @@ def main():
         if prev_item.get("summary") and prev_item.get("detail_text"):
             post["summary"] = prev_item["summary"]
             post["detail_text"] = prev_item["detail_text"]
-        else:
+        elif post["id"] not in deleted_ids:
             posts_needing_summary.append(post)
+        else:
+            post["summary"] = prev_item.get("summary", "신청기간이 만료되었거나 제외된 공고입니다.")
+            post["detail_text"] = prev_item.get("detail_text", post["summary"])
 
         existing_items_map[post["id"]] = post
 
-        if post["id"] not in seen_ids:
+        if post["id"] not in deleted_ids and post["id"] not in seen_ids:
             matched_items.append(post)
             new_seen_ids.add(post["id"])
 
@@ -868,18 +958,24 @@ def main():
                     p["summary"] = "상세 내용은 [공고 보기]를 눌러 확인해 주세요."
                     p["detail_text"] = p["summary"]
 
-    updated_items_list = list(existing_items_map.values())
-    server_db["items"] = updated_items_list
+    # 전체 아이템(활성 + 삭제/만료 보관분 최대 500건) 저장
+    all_stored_items = list(existing_items_map.values())[:500]
+    active_items_list = [item for item in all_stored_items if item.get("id") not in deleted_ids]
+    server_db["items"] = all_stored_items
+    server_db["deleted_ids"] = list(deleted_ids)
     save_server_db(server_db, config)
-    print(f"[서버 DB 갱신] 현재 보관 중인 누적 공고: {len(updated_items_list)}건 (삭제 제외: {len(deleted_ids)}건)")
+    print(
+        f"[서버 DB 갱신] 진행중 공고: {len(active_items_list)}건 | "
+        f"삭제/기간만료 보관함: {len(deleted_ids)}건 (금회 만료 자동이동: {expired_auto_moved}건)"
+    )
 
     print(f"=== 필터링 결과: 총 {len(all_posts)}건 중 신규 키워드 매칭 {len(matched_items)}건 ===")
     for idx, item in enumerate(matched_items, 1):
         kws = ", ".join(item["matched_keywords"])
         print(f"  {idx}. [{item['site']}] ({kws}) {item['title']} ({item['period']})")
 
-    # 신규 공고가 없더라도 매일 리포트를 받아볼 수 있도록 보관함 최신 목록(최대 30건)을 이메일 본문에 포함
-    report_items = matched_items if matched_items else updated_items_list[:30]
+    # 신규 공고가 없더라도 매일 리포트를 받아볼 수 있도록 진행중 보관함 최신 목록(최대 30건)을 이메일 본문에 포함
+    report_items = matched_items if matched_items else active_items_list[:30]
     html_report = build_html_report(report_items, keywords, today_str)
 
     with open(REPORT_PATH, "w", encoding="utf-8") as f:

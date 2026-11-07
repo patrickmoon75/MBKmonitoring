@@ -199,6 +199,54 @@
       width: 250px;
     }
 
+    .period-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+      font-size: 13px;
+    }
+    .period-group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+    .period-btn {
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+      color: #374151;
+      cursor: pointer;
+      transition: 0.15s;
+    }
+    .period-btn:hover {
+      background: #f1f5f9;
+    }
+    .period-btn.active {
+      background: #eff6ff;
+      color: var(--primary);
+      border-color: var(--primary-light);
+      font-weight: 700;
+    }
+    .date-input {
+      padding: 5px 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 12.5px;
+      color: #1f2937;
+      background: #fff;
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;
@@ -527,6 +575,35 @@
 
     <!-- 지원사업 목록 패널 -->
     <div class="panel">
+      <!-- 검색기간 설정 및 신청기간 만료 자동 이동 컨트롤 바 -->
+      <div class="period-bar">
+        <div class="period-group">
+          <strong style="color:#1e3a8a;margin-right:2px;">📅 검색기간 설정:</strong>
+          <button class="period-btn active" id="pbtn_ALL" onclick="setPeriodPreset('ALL')">전체 기간</button>
+          <button class="period-btn" id="pbtn_7" onclick="setPeriodPreset('7')">최근 7일</button>
+          <button class="period-btn" id="pbtn_14" onclick="setPeriodPreset('14')">최근 14일</button>
+          <button class="period-btn" id="pbtn_30" onclick="setPeriodPreset('30')">최근 30일</button>
+          <button class="period-btn" id="pbtn_SOON" onclick="setPeriodPreset('SOON')" style="color:#c2410c;border-color:#fdba74;">🔥 마감 임박(7일내)</button>
+          <span style="color:#cbd5e1;margin:0 2px;">|</span>
+          <select id="dateTargetType" class="date-input" onchange="onCustomDateChange()" title="기간 검색 기준일">
+            <option value="reg">등록/시작일 기준</option>
+            <option value="end">신청 마감일 기준</option>
+          </select>
+          <input type="date" id="dateFromInput" class="date-input" onchange="onCustomDateChange()" title="검색 시작일" />
+          <span>~</span>
+          <input type="date" id="dateToInput" class="date-input" onchange="onCustomDateChange()" title="검색 종료일" />
+          <button class="period-btn" onclick="resetDateFilter()" title="날짜 필터 초기화">초기화</button>
+        </div>
+
+        <div class="period-group" style="gap:10px;">
+          <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:12.5px;font-weight:600;color:#374151;" title="체크 시 신청 마감일이 오늘 이전인 공고를 자동으로 삭제(제외)함으로 이동시킵니다.">
+            <input type="checkbox" id="autoExpireCheckbox" checked onchange="toggleAutoExpireSetting(this.checked)" style="width:15px;height:15px;cursor:pointer;" />
+            ⏰ 신청기간 지난 공고 자동 삭제함 이동
+          </label>
+          <span id="expiredAutoBadge" style="font-size:12px;color:#b45309;background:#fef3c7;padding:3px 8px;border-radius:6px;font-weight:600;display:none;"></span>
+        </div>
+      </div>
+
       <div class="filters">
         <div class="filter-tabs" id="siteTabs">
           <button class="tab active" onclick="setSiteFilter('ALL')">전체 보기</button>
@@ -534,7 +611,7 @@
           <button class="tab" onclick="setSiteFilter('기업마당')">기업마당</button>
           <button class="tab" onclick="setSiteFilter('경기기업비서(이지비즈)')">경기기업비서</button>
           <button class="tab" onclick="setSiteFilter('한국콘텐츠진흥원(KOCCA)')">한국콘텐츠진흥원</button>
-          <button class="tab" onclick="setSiteFilter('DELETED')" style="color:#dc2626;">🗑️ 삭제(제외)함</button>
+          <button class="tab" id="deletedTabBtn" onclick="setSiteFilter('DELETED')" style="color:#dc2626;">🗑️ 삭제(제외)함</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <button class="btn btn-danger" id="bulkDeleteBtn" style="display:none;padding:8px 14px;" onclick="bulkActionSelected()">
@@ -611,6 +688,8 @@
       updated_at: "",
       items: [],
       deleted_ids: [],
+      search_days: 30,
+      auto_archive_expired: true,
       keywords: ["AI", "인공지능", "AX", "로봇", "창업", "벤처", "스타트업"],
       exclude_keywords: ["어업용", "일반음식점"],
       sites: {
@@ -622,8 +701,12 @@
       custom_sites: []
     };
     let currentSiteFilter = "ALL";
+    let currentPeriodPreset = "ALL";
     let hasUnsavedChanges = false;
     let pendingAskItemId = null;
+
+    // 사용자가 기간만료 공고를 수동 복구한 경우 다시 자동 삭제되지 않도록 기억
+    let manualRestoredIds = new Set(JSON.parse(localStorage.getItem("mbk_restored_expired_ids") || "[]"));
 
     // 다중 선택된 공고 ID 목록
     let selectedIds = new Set();
@@ -632,6 +715,183 @@
 
     // 공고별 질문/답변 누적 기록 { [itemId]: [ { id, question, answer, time } ] }
     let qaHistoryMap = {};
+
+    function getTodayStr() {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const d = String(now.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    function shiftDateStr(baseDateStr, deltaDays) {
+      const [y, m, d] = baseDateStr.split("-").map(Number);
+      const dt = new Date(y, m - 1, d);
+      dt.setDate(dt.getDate() + deltaDays);
+      const ny = dt.getFullYear();
+      const nm = String(dt.getMonth() + 1).padStart(2, "0");
+      const nd = String(dt.getDate()).padStart(2, "0");
+      return `${ny}-${nm}-${nd}`;
+    }
+
+    function diffDaysBetween(fromStr, toStr) {
+      if (!fromStr || !toStr) return null;
+      const [y1, m1, d1] = fromStr.split("-").map(Number);
+      const [y2, m2, d2] = toStr.split("-").map(Number);
+      const t1 = new Date(y1, m1 - 1, d1).getTime();
+      const t2 = new Date(y2, m2 - 1, d2).getTime();
+      return Math.round((t2 - t1) / (1000 * 60 * 60 * 24));
+    }
+
+    function normalizeDateToken(yStr, mStr, dStr) {
+      const year = yStr.length === 4 ? parseInt(yStr, 10) : 2000 + parseInt(yStr, 10);
+      const month = parseInt(mStr, 10);
+      const day = parseInt(dStr, 10);
+      if (month < 1 || month > 12 || day < 1 || day > 31) return "";
+      return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+
+    function extractItemDates(item) {
+      const regStr = String(item.reg_date || "");
+      const pStr = String(item.period || "");
+      const dateRe = /(20\d{2}|\d{2})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})/g;
+
+      let regNorm = item.reg_date_norm || "";
+      if (!regNorm) {
+        const rm = /(20\d{2}|\d{2})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})/.exec(regStr);
+        if (rm) regNorm = normalizeDateToken(rm[1], rm[2], rm[3]);
+      }
+
+      const pMatches = [];
+      let m;
+      while ((m = dateRe.exec(pStr)) !== null) {
+        const norm = normalizeDateToken(m[1], m[2], m[3]);
+        if (norm) pMatches.push(norm);
+      }
+
+      let startDate = item.start_date || "";
+      let endDate = item.end_date || "";
+
+      if (!startDate && !endDate) {
+        if (pMatches.length >= 2) {
+          startDate = pMatches[0];
+          endDate = pMatches[pMatches.length - 1];
+        } else if (pMatches.length === 1) {
+          if (pStr.includes("~")) {
+            endDate = pMatches[0];
+          } else {
+            startDate = pMatches[0];
+          }
+        }
+      }
+
+      if (!regNorm && startDate) regNorm = startDate;
+      if (!startDate && regNorm) startDate = regNorm;
+
+      item.start_date = startDate;
+      item.end_date = endDate;
+      item.reg_date_norm = regNorm;
+      return { startDate, endDate, regNorm };
+    }
+
+    function autoArchiveExpiredItems() {
+      const todayStr = getTodayStr();
+      let autoExpiredTotal = 0;
+      let newlyMovedCount = 0;
+
+      serverData.items.forEach(item => {
+        const { endDate } = extractItemDates(item);
+        const isPastDeadline = Boolean(endDate && endDate < todayStr);
+        if (isPastDeadline) {
+          item.expired = true;
+          autoExpiredTotal++;
+          if (serverData.auto_archive_expired !== false && !manualRestoredIds.has(item.id)) {
+            if (!serverData.deleted_ids.includes(item.id)) {
+              serverData.deleted_ids.push(item.id);
+              newlyMovedCount++;
+            }
+          }
+        } else {
+          item.expired = false;
+        }
+      });
+
+      const badge = document.getElementById("expiredAutoBadge");
+      if (badge) {
+        const movedExpiredCount = serverData.items.filter(i => i.expired && serverData.deleted_ids.includes(i.id)).length;
+        if (movedExpiredCount > 0) {
+          badge.style.display = "inline-block";
+          badge.textContent = `마감 자동정리: ${movedExpiredCount}건 삭제함 보관 중`;
+        } else {
+          badge.style.display = "none";
+        }
+      }
+
+      if (newlyMovedCount > 0) {
+        localStorage.setItem("mbk_local_deleted_ids", JSON.stringify(serverData.deleted_ids));
+      }
+      return newlyMovedCount;
+    }
+
+    function toggleAutoExpireSetting(checked) {
+      serverData.auto_archive_expired = checked;
+      localStorage.setItem("mbk_auto_archive_expired", JSON.stringify(checked));
+      if (checked) {
+        const moved = autoArchiveExpiredItems();
+        showToast(moved > 0 ? `⏰ 신청기간이 지난 공고 ${moved}건을 자동으로 삭제(제외)함으로 이동했습니다.` : "⏰ 신청기간 만료 공고 자동 이동 기능이 켜졌습니다.");
+      } else {
+        showToast("신청기간 만료 공고 자동 이동 기능이 해제되었습니다.");
+      }
+      markChanged();
+      renderTable();
+      updateHeaderStatus();
+    }
+
+    function setPeriodPreset(preset) {
+      currentPeriodPreset = preset;
+      ["ALL", "7", "14", "30", "SOON"].forEach(k => {
+        const btn = document.getElementById("pbtn_" + k);
+        if (btn) btn.classList.toggle("active", k === preset);
+      });
+
+      const todayStr = getTodayStr();
+      const fromInp = document.getElementById("dateFromInput");
+      const toInp = document.getElementById("dateToInput");
+      const targetSelect = document.getElementById("dateTargetType");
+
+      if (preset === "ALL") {
+        fromInp.value = "";
+        toInp.value = "";
+        serverData.search_days = 0;
+      } else if (preset === "SOON") {
+        targetSelect.value = "end";
+        fromInp.value = todayStr;
+        toInp.value = shiftDateStr(todayStr, 7);
+      } else {
+        const days = parseInt(preset, 10);
+        targetSelect.value = "reg";
+        fromInp.value = shiftDateStr(todayStr, -days);
+        toInp.value = todayStr;
+        serverData.search_days = days;
+      }
+
+      localStorage.setItem("mbk_search_period_preset", preset);
+      renderTable();
+    }
+
+    function onCustomDateChange() {
+      currentPeriodPreset = "CUSTOM";
+      ["ALL", "7", "14", "30", "SOON"].forEach(k => {
+        const btn = document.getElementById("pbtn_" + k);
+        if (btn) btn.classList.remove("active");
+      });
+      renderTable();
+    }
+
+    function resetDateFilter() {
+      setPeriodPreset("ALL");
+      showToast("📅 검색기간 필터가 전체 기간으로 초기화되었습니다.");
+    }
 
     function loadQaHistory() {
       try {
@@ -703,6 +963,8 @@
           serverData.updated_at = json.updated_at || "";
           serverData.items = json.items || [];
           serverData.deleted_ids = json.deleted_ids || [];
+          if (typeof json.search_days === "number") serverData.search_days = json.search_days;
+          if (typeof json.auto_archive_expired === "boolean") serverData.auto_archive_expired = json.auto_archive_expired;
           if (json.keywords) serverData.keywords = json.keywords;
           if (json.exclude_keywords) serverData.exclude_keywords = json.exclude_keywords;
           if (json.sites) serverData.sites = json.sites;
@@ -711,6 +973,13 @@
       } catch (e) {
         console.warn("data.json 로드 실패:", e);
       }
+
+      const localAutoExp = localStorage.getItem("mbk_auto_archive_expired");
+      if (localAutoExp !== null) {
+        serverData.auto_archive_expired = JSON.parse(localAutoExp);
+      }
+      const expChk = document.getElementById("autoExpireCheckbox");
+      if (expChk) expChk.checked = serverData.auto_archive_expired !== false;
 
       const localDel = JSON.parse(localStorage.getItem("mbk_local_deleted_ids") || "[]");
       localDel.forEach(id => {
@@ -721,6 +990,16 @@
       if (localCustomSites && localCustomSites.length > serverData.custom_sites.length) {
         serverData.custom_sites = localCustomSites;
       }
+
+      // 신청기간(마감일) 지난 공고 자동 삭제(제외)함 이동 처리
+      const autoMovedCount = autoArchiveExpiredItems();
+      if (autoMovedCount > 0) {
+        showToast(`⏰ 신청기간이 지난 공고 ${autoMovedCount}건을 자동으로 삭제(제외)함으로 이동했습니다.`);
+      }
+
+      // 저장된 검색기간 프리셋 복원
+      const savedPreset = localStorage.getItem("mbk_search_period_preset") || "ALL";
+      setPeriodPreset(savedPreset);
 
       const params = new URLSearchParams(window.location.search);
       const deleteId = params.get("delete");
@@ -749,9 +1028,14 @@
 
     function updateHeaderStatus() {
       const activeCount = serverData.items.filter(i => !serverData.deleted_ids.includes(i.id)).length;
-      const delCount = serverData.deleted_ids.length;
+      const delItemsCount = serverData.items.filter(i => serverData.deleted_ids.includes(i.id)).length;
+      const expiredDelCount = serverData.items.filter(i => i.expired && serverData.deleted_ids.includes(i.id)).length;
       document.getElementById("statusText").innerHTML =
-        `마지막 서버 업데이트: <strong>${serverData.updated_at || '방금 전'}</strong> | 보관 중인 공고: <strong>${activeCount}건</strong> | 제외됨: <strong>${delCount}건</strong>`;
+        `마지막 서버 업데이트: <strong>${serverData.updated_at || '방금 전'}</strong> | 진행중 공고: <strong>${activeCount}건</strong> | 삭제(제외)함: <strong>${delItemsCount}건</strong> (기간만료 자동이동 ${expiredDelCount}건)`;
+      const delTab = document.getElementById("deletedTabBtn");
+      if (delTab) {
+        delTab.innerHTML = `🗑️ 삭제(제외)함 (${delItemsCount})`;
+      }
     }
 
     function renderKeywords() {
@@ -967,6 +1251,8 @@
       if (ids.length === 0) return;
 
       if (currentSiteFilter === "DELETED") {
+        ids.forEach(id => manualRestoredIds.add(id));
+        localStorage.setItem("mbk_restored_expired_ids", JSON.stringify(Array.from(manualRestoredIds)));
         serverData.deleted_ids = serverData.deleted_ids.filter(id => !selectedIds.has(id));
         selectedIds.clear();
         markChanged();
@@ -975,10 +1261,12 @@
         showToast(`♻️ 선택한 ${ids.length}건의 공고를 보관함으로 일괄 복구했습니다.`);
       } else {
         ids.forEach(id => {
+          manualRestoredIds.delete(id);
           if (!serverData.deleted_ids.includes(id)) {
             serverData.deleted_ids.push(id);
           }
         });
+        localStorage.setItem("mbk_restored_expired_ids", JSON.stringify(Array.from(manualRestoredIds)));
         selectedIds.clear();
         markChanged();
         renderTable();
@@ -1187,6 +1475,8 @@ ${contextText}
     }
 
     function deleteItem(id, fromEmail = false) {
+      manualRestoredIds.delete(id);
+      localStorage.setItem("mbk_restored_expired_ids", JSON.stringify(Array.from(manualRestoredIds)));
       if (!serverData.deleted_ids.includes(id)) {
         serverData.deleted_ids.push(id);
       }
@@ -1202,6 +1492,8 @@ ${contextText}
     }
 
     function restoreItem(id) {
+      manualRestoredIds.add(id);
+      localStorage.setItem("mbk_restored_expired_ids", JSON.stringify(Array.from(manualRestoredIds)));
       serverData.deleted_ids = serverData.deleted_ids.filter(x => x !== id);
       selectedIds.delete(id);
       markChanged();
@@ -1219,7 +1511,11 @@ ${contextText}
 
     function renderTable() {
       const tbody = document.getElementById("tableBody");
-      const q = (document.getElementById("searchInput").value || "").toLowerCase().trim();
+      const q = (document.getElementById("searchInput")?.value || "").toLowerCase().trim();
+      const dateFrom = document.getElementById("dateFromInput")?.value || "";
+      const dateTo = document.getElementById("dateToInput")?.value || "";
+      const dateTarget = document.getElementById("dateTargetType")?.value || "reg";
+      const todayStr = getTodayStr();
 
       let list = [];
       if (currentSiteFilter === "DELETED") {
@@ -1229,6 +1525,18 @@ ${contextText}
         if (currentSiteFilter !== "ALL") {
           list = list.filter(item => item.site === currentSiteFilter);
         }
+      }
+
+      // 검색기간(시작일 ~ 종료일) 필터링 적용
+      if (dateFrom || dateTo) {
+        list = list.filter(item => {
+          const { startDate, endDate, regNorm } = extractItemDates(item);
+          const targetDate = dateTarget === "end" ? endDate : (regNorm || startDate);
+          if (!targetDate) return false;
+          if (dateFrom && targetDate < dateFrom) return false;
+          if (dateTo && targetDate > dateTo) return false;
+          return true;
+        });
       }
 
       if (q) {
@@ -1247,7 +1555,7 @@ ${contextText}
         tbody.innerHTML = `
           <tr>
             <td colspan="5" style="text-align:center;padding:36px;color:var(--muted);">
-              표시할 지원사업 공고가 없습니다.
+              선택한 조건(검색기간 / 탭 / 키워드)에 해당하는 지원사업 공고가 없습니다.
             </td>
           </tr>
         `;
@@ -1262,6 +1570,22 @@ ${contextText}
         const formattedSummary = formatSummaryHtml(item.summary);
         const qCount = (qaHistoryMap[item.id] || []).length;
         const qBadge = qCount > 0 ? `<span class="badge" style="background:#f3e8ff;color:#6d28d9;">💬 질문 ${qCount}</span>` : "";
+
+        // 마감일 D-Day 및 기간만료 뱃지 생성
+        const { endDate } = extractItemDates(item);
+        let statusBadge = "";
+        if (endDate) {
+          const dLeft = diffDaysBetween(todayStr, endDate);
+          if (dLeft < 0) {
+            statusBadge = `<span class="badge" style="background:#fef3c7;color:#b45309;">⏰ 기간만료 자동제외</span>`;
+          } else if (dLeft === 0) {
+            statusBadge = `<span class="badge" style="background:#fee2e2;color:#dc2626;">🚨 오늘 마감(D-Day)</span>`;
+          } else if (dLeft <= 7) {
+            statusBadge = `<span class="badge" style="background:#ffedd5;color:#c2410c;">🔥 마감 D-${dLeft}</span>`;
+          }
+        } else if (isDeleted) {
+          statusBadge = `<span class="badge" style="background:#f3f4f6;color:#4b5563;">🗑️ 수동 제외</span>`;
+        }
 
         const actionBtn = isDeleted
           ? `<button class="btn btn-primary" style="padding:6px 9px;font-size:12px;" onclick="restoreItem('${item.id}')">♻️ 복구</button>`
@@ -1278,7 +1602,7 @@ ${contextText}
               <span style="font-size:12px;color:var(--muted);">${escapeHtml(item.agency || '')}</span>
             </td>
             <td>
-              <div>${badges}${qBadge}</div>
+              <div>${badges}${statusBadge}${qBadge}</div>
               <a href="${item.url}" target="_blank" class="title-link">${escapeHtml(item.title)}</a>
             </td>
             <td style="font-size:13px;color:#374151;white-space:nowrap;">
@@ -1428,21 +1752,25 @@ ${contextText}
       try {
         if (!silent) showToast("☁️ GitHub 서버에 변경사항을 저장하는 중...");
 
-        const filteredItems = serverData.items.filter(i => !serverData.deleted_ids.includes(i.id));
+        const storedItems = serverData.items.slice(0, 500);
         const updatedDataJson = {
           updated_at: new Date().toISOString().replace("T", " ").substring(0, 19),
           keywords: serverData.keywords,
           exclude_keywords: serverData.exclude_keywords,
+          search_days: serverData.search_days,
+          auto_archive_expired: serverData.auto_archive_expired,
           sites: serverData.sites,
           custom_sites: serverData.custom_sites,
           deleted_ids: serverData.deleted_ids,
-          items: filteredItems
+          items: storedItems
         };
         await updateGitHubFile("docs/data.json", updatedDataJson, token, "chore: sync dashboard data [skip ci]");
 
         await updateGitHubFile("config.json", (existingCfg) => {
           existingCfg.keywords = serverData.keywords;
           existingCfg.exclude_keywords = serverData.exclude_keywords;
+          existingCfg.search_days = serverData.search_days;
+          existingCfg.auto_archive_expired = serverData.auto_archive_expired;
           existingCfg.custom_sites = serverData.custom_sites;
           return existingCfg;
         }, token, "chore: sync config.json from web dashboard [skip ci]");
