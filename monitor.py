@@ -127,20 +127,264 @@ def match_keywords(text: str, keywords: List[str], exclude_keywords: List[str]) 
     return matched
 
 
-def fetch_post_summary_and_detail(url: str, site_name: str = "") -> Tuple[str, str]:
+def format_krw_readable(amount_str: str) -> str:
+    """'20,000천원', '130백만원' 같은 표기 뒤에 알기 쉬운 한글 금액(예: 2,000만원, 1억 3,000만원)을 덧붙입니다."""
+    if not amount_str:
+        return amount_str
+
+    def _convert_thousand(m):
+        raw_num = m.group(1).replace(",", "")
+        try:
+            val_man = int(float(raw_num)) // 10
+            if val_man <= 0:
+                return m.group(0)
+            if val_man >= 10000:
+                uk = val_man // 10000
+                rem = val_man % 10000
+                kr = f"{uk}억 {rem:,}만원" if rem else f"{uk}억원"
+            else:
+                kr = f"{val_man:,}만원"
+            return f"{m.group(0)}({kr})"
+        except Exception:
+            return m.group(0)
+
+    def _convert_million(m):
+        raw_num = m.group(1).replace(",", "")
+        try:
+            val_man = int(float(raw_num) * 100)
+            if val_man >= 10000:
+                uk = val_man // 10000
+                rem = val_man % 10000
+                kr = f"{uk}억 {rem:,}만원" if rem else f"{uk}억원"
+            else:
+                kr = f"{val_man:,}만원"
+            return f"{m.group(0)}({kr})"
+        except Exception:
+            return m.group(0)
+
+    res = re.sub(r"(\d[\d,]*)\s*천\s*원(?!\s*\()", _convert_thousand, amount_str)
+    res = re.sub(r"(\d[\d,.]*)\s*백만\s*원(?!\s*\()", _convert_million, res)
+    return res
+
+
+def extract_structured_info(raw_text: str, detail_text: str = "", title: str = "") -> Dict[str, str]:
     """
-    공고 상세 페이지에 접속하여:
-    1) 화면 표시용 간략 개요 (summary, 약 420자)
-    2) AI 질문 답변용 상세 본문 (detail_text, 최대 2,500자)
-    두 가지를 추출합니다.
+    공고 본문에서:
+    1) 사업내용 (project_content) - 개요 첫 줄에 표시할 핵심 사업 설명
+    2) 지원수 / 선정규모 (support_count)
+    3) 기업당 지원금 / 지원규모 (support_amount)
+    4) 불필요한 메타데이터를 제거하고 재구성한 개요 텍스트 (cleaned_body)
+    를 추출합니다.
+    """
+    combined = f"{raw_text or ''} {detail_text or ''}".strip()
+    combined = re.sub(r"\s+", " ", combined)
+
+    # 1. 사업내용(project_content) 추출
+    project_content = ""
+
+    # 패턴 A: K-Startup 등에서 이미 추출된 [사업내용] 블록이 있는 경우
+    m_ov = re.search(r"\[사업내용\]\s*(.+?)(?=\s*\[|\s*(?:신청방법 및 대상|신청기간|모집개요|입주모집개요|지원내용|제출서류)|$)", combined)
+    if m_ov:
+        project_content = m_ov.group(1).strip()
+
+    # 패턴 B: 경기기업비서(EGBIZ) - '사업담당' 뒤에 실제 사업내용 문단이 위치
+    if not project_content:
+        m_eg = re.search(
+            r"사업담당\s+(?:[가-힣A-Za-z0-9·()_\-\s]{1,25}\d{2,4}-\d{3,4}-\d{4}\s+)?(.+?)(?=\s*(?:☞|신청자격|사업신청|접수\(신청\)기간|문의처|$))",
+            combined,
+        )
+        if m_eg:
+            project_content = m_eg.group(1).strip()
+
+    # 패턴 C: 기업마당(Bizinfo) - '사업개요' 뒤 (단, '사업개요 지원사업명' 제외)
+    if not project_content:
+        m_bz = re.search(
+            r"사업개요\s+(?!지원사업명)(.+?)(?=\s*(?:☞|사업신청|신청자격|문의처|$))",
+            combined,
+        )
+        if m_bz:
+            project_content = m_bz.group(1).strip()
+
+    # 패턴 D: 원문 내 '~모집하오니 많은 신청 바랍니다' 또는 '~모집합니다' 안내 문장 추출
+    if not project_content:
+        m_intro = re.search(
+            r"([가-힣A-Za-z0-9\s,·()「」『』【】\[\]\"'ㆍ\-]{20,280}?(?:모집하오니|모집합니다|추진하오니|공고합니다|안내합니다)[^.!?☞□■]{0,60}[.!?]?)",
+            combined,
+        )
+        if m_intro:
+            cand = m_intro.group(1).strip()
+            cand = re.sub(r"^.*?(?:신청기간|접수기간|신청대상|지원대상|사업담당|사업개요)\s*", "", cand).strip()
+            if len(cand) >= 18:
+                project_content = cand
+
+    # 패턴 E: K-Startup 등에서 별도 인사말이 없을 때 지원내용/교육안내 또는 신청대상을 요약
+    if not project_content:
+        m_sup = re.search(
+            r"(?:지원내용|교육안내|세부내용|모집개요|신청대상)\s+(.+?)(?=\s*(?:제외대상|신청 시 요청하는 정보|제출서류|선정절차|문의처|상기 일정은|$))",
+            combined,
+        )
+        if m_sup:
+            project_content = m_sup.group(1).strip()[:220]
+        else:
+            project_content = (title or combined[:150]).strip()
+
+    # 불필요한 앞뒤 문구 정리
+    project_content = re.sub(r"^\[?공고\s*제?\s*[\d\-]+호?\]?\s*", "", project_content).strip()
+    if title and project_content.startswith(title) and len(project_content) > len(title) + 10:
+        project_content = project_content[len(title):].strip()
+    # 문장 맨 끝에 붙는 공고일자 및 기관명 서명만 제거 (문장 중간의 행사일정 '2027년 4월 5일 ~' 등은 보존)
+    project_content = re.sub(r"\s*202\d년\s*\d{1,2}월\s*\d{1,2}일\s*(?![~부터까지(])[^.~!?]{0,30}$", "", project_content).strip()
+    if not project_content:
+        project_content = f"{title} (세부내용은 원문 공고문 및 첨부파일 참조)"
+    if len(project_content) > 260:
+        project_content = project_content[:260].rstrip() + "..."
+
+    # 제외대상/제외요건 구간을 제거한 텍스트에서 지원수 및 지원금을 탐색 (벌금형 100만원, 업력 7년 이내 등 오탐 방지)
+    search_zone = re.sub(
+        r"(?:제외대상|제외요건|지원제외).*?(?=\s*(?:지원내용|모집개요|입주모집개요|교육안내|신청방법|사업신청|문의처|\[원문상세\]|$))",
+        " ",
+        combined,
+    )
+
+    # 2. 지원수 / 선정규모(support_count) 추출
+    support_count = ""
+    scale_label_patterns = [
+        r"(?:지원규모|선정규모|모집규모|선발규모|모집인원|참가규모|입주규모)\s*[:：]?\s*((?:총\s*|최대\s*|약\s*)?\d+\s*(?:~\s*\d+\s*)?(?:개사|개\s*기업|개\s*팀|개실|곳|개\s*과제|과제|개\s*기관|개소|팀|명|기업)(?:\s*(?:내외|이내|이하|선정|모집|지원|선발))?(?:\s*\(최대\s*\d+[명팀개사곳]+\))?)",
+        r"(?<!창업\s)(?<!업력\s)(?<!설립\s)(?<!최소\s)(?<!관내\s)(?<!인천\s)((?:총\s*|모집\s*|선정\s*|선발\s*)?\d+\s*(?:~\s*\d+\s*)?(?:개사|개\s*기업|개\s*팀|개실|곳|개\s*과제|개소)\s*(?:내외|이내|이하|선정|모집|지원|선발)?)",
+        r"((?:총\s*|모집\s*|선정\s*|선발\s*)\d+\s*(?:~\s*\d+\s*)?(?:명|팀)\s*(?:내외|이내|이하|선정|모집|선발)?(?:\s*\(최대\s*\d+[명팀]\))?)",
+        r"(\d+\s*(?:명|팀)\s*내외(?:\s*\(최대\s*\d+[명팀]\))?)",
+    ]
+    for pat in scale_label_patterns:
+        m_sc = re.search(pat, search_zone)
+        if m_sc:
+            cand_sc = m_sc.group(1).strip()
+            # '9개 대학', '7대 거점', '2개의 단체', '1팀(3~4인 1팀)' 등 제외
+            if any(bad in cand_sc for bad in ["대학", "거점", "단체", "1팀", "호실"]):
+                continue
+            support_count = cand_sc
+            break
+
+    if not support_count:
+        support_count = "공고문 참조 (본문 미기재)"
+
+    # 3. 기업당 지원금(support_amount) 추출
+    support_amount = ""
+    amount_patterns = [
+        # '기업당 최대 20,000천원', '과제 당 지원금 120,000천원', '1인당 150,000원' 등
+        r"((?:기업당|과제\s*당|과제당|팀당|1인당|인당|기업별|연\s*임대료|직접\s*투자|지원금|사업화\s*자금|창업\s*자금|최대)\s*(?:\([^)]{1,18}\)\s*)?(?:지원금\s*)?(?:최대\s*|총\s*|약\s*)?\d[\d,.]*\s*(?:~\s*\d[\d,.]*\s*)?(?:백만원|천만원|억원|억\s*원|만원|만\s*원|천원|천\s*원|원)(?:\s*(?:이내|이하|이상|지원|지급|한도|상당))?)",
+        # '지원규모 : 5개사 내외 (기업당 최대 20,000천원)' 안의 금액이나 일반 금액 표기
+        r"((?:최대\s*|총\s*|약\s*)?\d[\d,.]*\s*(?:~\s*\d[\d,.]*\s*)?(?:백만원|천만원|억원|억\s*원|만원|만\s*원|천원|천\s*원)(?:\s*(?:이내|이하|이상|지원|지급|한도|상당))?)",
+    ]
+    for pat in amount_patterns:
+        for m_am in re.finditer(pat, search_zone):
+            cand_am = m_am.group(1).strip()
+            # 벌금형 등 오탐 제외
+            ctx_start = max(0, m_am.start() - 15)
+            ctx_after = min(len(search_zone), m_am.end() + 15)
+            ctx = search_zone[ctx_start:ctx_after]
+            if "벌금" in ctx or "과태료" in ctx or "보증금" in ctx:
+                continue
+            support_amount = format_krw_readable(cand_am)
+            break
+        if support_amount:
+            break
+
+    if not support_amount:
+        if any(k in combined for k in ["구축 비용", "비용 지원", "사업화 자금", "사업화자금", "지원금", "사업비", "시제품", "재료비", "제작비"]):
+            support_amount = "사업비/자금 지원 (세부금액 공고문 참조)"
+        elif any(k in combined for k in ["입주기업 모집", "입주자 모집", "창업보육센터", "입주공간"]):
+            support_amount = "입주공간·보육 지원 (임대료 등 공고문 참조)"
+        elif any(k in combined for k in ["교육", "아카데미", "워크숍", "멘토링", "컨설팅", "법률상담", "해커톤", "페스티벌", "포럼", "데모데이"]):
+            support_amount = "비예산 (교육·멘토링·행사·연계 지원)"
+        else:
+            support_amount = "공고문 참조 (본문 미기재)"
+
+    # 4. 나머지 주요 항목 정리 (중복 헤더·노이즈 제거)
+    cleaned_body = raw_text or ""
+    cleaned_body = re.sub(r"\[사업내용\]\s*.+?(?=\s*(?:신청방법 및 대상|신청기간|지원내용|입주모집개요|모집개요|$))", "", cleaned_body)
+    cleaned_body = re.sub(
+        r"^사업개요\s+지원사업명\s+.+?(?:사업담당\s+(?:[가-힣A-Za-z0-9·()_\-\s]{1,25}\d{2,4}-\d{3,4}-\d{4}\s+)?)",
+        "",
+        cleaned_body,
+    )
+    cleaned_body = re.sub(
+        r"^소관부처·지자체\s+.+?사업개요\s+",
+        "",
+        cleaned_body,
+    )
+    if project_content and len(project_content) > 25:
+        prefix_check = project_content[:35].rstrip(".")
+        if prefix_check in cleaned_body:
+            idx_p = cleaned_body.find(prefix_check)
+            # project_content 문단 이후(예: ☞ 뒤)부터 남김
+            m_after = re.search(r"(☞|신청기간|신청방법|신청대상|지원대상|지원내용|입주모집개요|모집개요|교육안내)", cleaned_body[idx_p + 10:])
+            if m_after:
+                cleaned_body = cleaned_body[idx_p + 10 + m_after.start():].strip()
+
+    for footer_noise in [
+        "신청 시 요청하는 정보(개인정보포함)는 사업운영기관에서 관리되오니 이점 반드시 유의하여 주시기 바랍니다.",
+        "본 지원사업에 대한 문의˙신청 등의 모든 절차는 수행기관에서 전담하고 있음을 안내드립니다.",
+        "상기 일정은 사업운영기관의 내부사정으로 변경될 수 있습니다.",
+        "제출하신 서류는 사업운영기관에서 관리되오니 서류 반환 등 문의는 해당 기관으로 하시기 바랍니다.",
+    ]:
+        cleaned_body = cleaned_body.replace(footer_noise, "").strip()
+
+    cleaned_body = re.sub(r"^신청방법 및 대상\s*", "", cleaned_body).strip()
+    if len(cleaned_body) > 420:
+        cleaned_body = cleaned_body[:420].rstrip() + "..."
+
+    structured_summary = (
+        f"사업내용 {project_content} "
+        f"지원수 {support_count} "
+        f"기업당 지원금 {support_amount} "
+        f"{cleaned_body}"
+    ).strip()
+
+    return {
+        "project_content": project_content,
+        "support_count": support_count,
+        "support_amount": support_amount,
+        "summary": structured_summary,
+    }
+
+
+def fetch_post_summary_and_detail(url: str, site_name: str = "", title: str = "") -> Tuple[str, str, Dict[str, str]]:
+    """
+    공고 상세 페이지(및 연결된 원문 출처 페이지)에 접속하여:
+    1) 사업내용이 첫 줄에 배치되고 지원수·기업당 지원금이 포함된 개요 (summary)
+    2) AI 질문 답변용 상세 본문 (detail_text, 최대 3,000자)
+    3) 구조화 필드 사전 (project_content, support_count, support_amount)
+    을 추출합니다.
     """
     default_msg = "상세 페이지에서 내용을 확인해 주세요."
+    empty_info = {
+        "project_content": default_msg,
+        "support_count": "공고문 참조",
+        "support_amount": "공고문 참조",
+    }
     if not url or url.startswith("javascript:"):
-        return default_msg, default_msg
+        return default_msg, default_msg, empty_info
 
     try:
         html = fetch_text(url, timeout=10)
         soup = BeautifulSoup(html, "html.parser")
+
+        # EGBIZ나 기업마당에서 연결된 원문(출처 바로가기) URL 미리 탐색
+        bizinfo_link = None
+        orig_source_link = None
+        if "egbiz.or.kr" in url:
+            for a in soup.select("a[href]"):
+                href = a.get("href", "").strip()
+                if "bizinfo.go.kr" in href:
+                    bizinfo_link = href
+                    break
+        elif "bizinfo.go.kr" in url:
+            for a in soup.select("a[href]"):
+                if "출처 바로가기" in a.get_text(strip=True):
+                    href = a.get("href", "").strip()
+                    if href.startswith("http"):
+                        orig_source_link = href
+                        break
 
         for tag in soup.select(
             "script, style, header, footer, nav, .gnb, .lnb, #header, #footer, "
@@ -148,50 +392,110 @@ def fetch_post_summary_and_detail(url: str, site_name: str = "") -> Tuple[str, s
         ):
             tag.decompose()
 
-        candidates = [
-            ".information_list",   # K-Startup
-            ".view_cont",          # 기업마당 (Bizinfo)
-            ".tender_con",         # KOCCA 지원사업
-            ".board_cont",         # KOCCA 공지사항
-            ".pageWrap",           # 경기기업비서 (EGBIZ)
-            ".board_view",
-            ".bbs_view",
-            ".view_body",
-            ".view_con",
-            "article",
-            "#contents",
-            "#content",
-        ]
-
         extracted = ""
-        for sel in candidates:
-            el = soup.select_one(sel)
-            if el:
-                txt = " ".join(el.get_text(" ", strip=True).split())
-                for noise in [
-                    "지원사업신청 목록가기 공유하기 프린트",
-                    "첨부파일 일괄다운로드",
-                    "공유하기 페이스북 트위터",
-                ]:
-                    txt = txt.replace(noise, "").strip()
-                if len(txt) >= 35:
-                    extracted = txt
+        # 1) K-Startup: 상단 .box_inner(사업내용) + 모든 .information_list 섹션을 통합 추출
+        if "k-startup.go.kr" in url:
+            parts = []
+            for box in soup.select(".box_inner"):
+                b_txt = " ".join(box.get_text(" ", strip=True).split())
+                if "개인정보 수집/이용동의" in b_txt or "이메일 도메인" in b_txt:
+                    continue
+                if len(b_txt) >= 20:
+                    parts.append(f"[사업내용] {b_txt}")
                     break
+
+            info_lists = []
+            priority_lists = []
+            for il in soup.select(".information_list"):
+                i_txt = " ".join(il.get_text(" ", strip=True).split())
+                if not i_txt:
+                    continue
+                if any(i_txt.startswith(k) for k in ["지원내용", "입주모집개요", "모집개요", "교육안내", "세부내용"]):
+                    priority_lists.append(i_txt)
+                else:
+                    info_lists.append(i_txt)
+            parts.extend(priority_lists)
+            parts.extend(info_lists)
+            extracted = " ".join(parts).strip()
+
+        # 2) 그 외 사이트 (기업마당, 경기기업비서, KOCCA 등)
+        if not extracted:
+            candidates = [
+                ".view_cont",          # 기업마당 (Bizinfo)
+                ".tender_con",         # KOCCA 지원사업
+                ".board_cont",         # KOCCA 공지사항
+                ".pageWrap",           # 경기기업비서 (EGBIZ)
+                ".board_view",
+                ".bbs_view",
+                ".view_body",
+                ".view_con",
+                "article",
+                "#contents",
+                "#content",
+            ]
+            for sel in candidates:
+                el = soup.select_one(sel)
+                if el:
+                    txt = " ".join(el.get_text(" ", strip=True).split())
+                    for noise in [
+                        "지원사업신청 목록가기 공유하기 프린트",
+                        "첨부파일 일괄다운로드",
+                        "공유하기 페이스북 트위터",
+                    ]:
+                        txt = txt.replace(noise, "").strip()
+                    if len(txt) >= 35:
+                        extracted = txt
+                        break
 
         if not extracted:
             body_el = soup.body or soup
             extracted = " ".join(body_el.get_text(" ", strip=True).split())
 
+        # EGBIZ -> 기업마당 -> 출처 바로가기 원문 텍스트 보강 (지원수, 기업당 지원금 등 세부 수치 확보)
+        extra_orig_text = ""
+        try:
+            if bizinfo_link and not orig_source_link:
+                b_html = fetch_text(bizinfo_link, timeout=6)
+                b_soup = BeautifulSoup(b_html, "html.parser")
+                for a in b_soup.select("a[href]"):
+                    if "출처 바로가기" in a.get_text(strip=True):
+                        href = a.get("href", "").strip()
+                        if href.startswith("http"):
+                            orig_source_link = href
+                            break
+
+            if orig_source_link and not any(
+                ext in orig_source_link.lower() for ext in [".pdf", ".hwp", ".zip", ".doc", ".xls", "pdfviewer"]
+            ):
+                o_html = fetch_text(orig_source_link, timeout=6)
+                o_soup = BeautifulSoup(o_html, "html.parser")
+                for tag in o_soup.select("script, style, header, footer, nav, .gnb, .lnb, #header, #footer"):
+                    tag.decompose()
+                o_txt = " ".join(o_soup.get_text(" ", strip=True).split())
+                # '사업개요' 또는 '지원규모' 또는 '모집공고' 부근 텍스트 발췌
+                m_sec = re.search(r"(?:사업개요|모집개요|지원규모|모집공고).{0,1200}", o_txt)
+                if m_sec:
+                    extra_orig_text = m_sec.group(0)
+                elif len(o_txt) > 100:
+                    extra_orig_text = o_txt[:1200]
+        except Exception:
+            pass
+
         if not extracted or len(extracted) < 15:
             msg = "본문이 첨부파일(HWP/PDF) 또는 이미지로 제공되는 공고입니다. [공고 보기]를 눌러 확인해 주세요."
-            return msg, msg
+            return msg, msg, empty_info
 
-        summary = extracted[:420].rstrip() + ("..." if len(extracted) > 420 else "")
-        detail_text = extracted[:2500].rstrip()
-        return summary, detail_text
+        full_detail = extracted
+        if extra_orig_text:
+            full_detail = f"{extracted} [원문상세] {extra_orig_text}"
+
+        info = extract_structured_info(extracted, full_detail, title=title)
+        summary = info["summary"]
+        detail_text = full_detail[:3000].rstrip()
+        return summary, detail_text, info
     except Exception:
         msg = "상세 요약을 불러오지 못했습니다. [공고 보기]를 눌러 원문을 확인해 주세요."
-        return msg, msg
+        return msg, msg, empty_info
 
 
 def fetch_kstartup(max_pages: int = 3) -> List[Dict]:
@@ -578,15 +882,31 @@ def save_server_db(db_data: Dict, config: Dict) -> None:
 
 
 def format_summary_html(raw_text: str) -> str:
-    """개요 텍스트를 주요 항목별로 줄바꿈하고 라벨을 강조합니다."""
+    """개요 텍스트를 주요 항목별로 줄바꿈하고 사업내용·지원수·기업당 지원금 라벨을 강조합니다."""
     if not raw_text:
         return "상세 내용은 공고 보기를 눌러 확인해 주세요."
     text = html_lib.escape(raw_text)
     text = re.sub(r"^신청방법 및 대상\s*", "", text)
 
+    # 1) 핵심 3대 라벨(사업내용, 지원수, 기업당 지원금) 강조
+    primary_labels = [
+        ("사업내용", "#dbeafe", "#1e3a8a"),
+        ("지원수", "#dcfce7", "#166534"),
+        ("기업당 지원금", "#fef3c7", "#92400e"),
+    ]
+    for label, bg, fg in primary_labels:
+        pattern = rf"(?:^|\s+)({re.escape(label)})(?=\s)"
+        badge_html = (
+            f'<br><span style="display:inline-block;background:{bg};color:{fg};'
+            f'font-weight:800;padding:2px 7px;border-radius:4px;margin-right:6px;font-size:12.5px;">\\1</span>'
+        )
+        text = re.sub(pattern, badge_html, text)
+
+    # 2) 일반 섹션 라벨 강조
     labels = [
         "신청기간", "접수기간", "공고기간", "신청방법", "접수방법", "신청대상", "지원대상",
         "제외대상", "신청 시 요청하는 정보", "사업개요", "공고 개요", "지원내용", "지원규모",
+        "입주모집개요", "모집개요", "교육안내", "세부내용",
         "소관부처·지자체", "소관부처", "사업수행기관", "수행기관", "문의처", "진행구분", "관련사이트"
     ]
     for label in labels:
@@ -927,13 +1247,30 @@ def main():
         post["matched_keywords"] = matched_kws
         post["collected_date"] = prev_item.get("collected_date", today_str)
 
-        if prev_item.get("summary") and prev_item.get("detail_text"):
+        if (
+            prev_item.get("summary")
+            and prev_item.get("detail_text")
+            and prev_item.get("project_content")
+            and prev_item.get("support_count")
+            and prev_item.get("support_amount")
+        ):
             post["summary"] = prev_item["summary"]
             post["detail_text"] = prev_item["detail_text"]
+            post["project_content"] = prev_item["project_content"]
+            post["support_count"] = prev_item["support_count"]
+            post["support_amount"] = prev_item["support_amount"]
         elif post["id"] not in deleted_ids:
             posts_needing_summary.append(post)
         else:
-            post["summary"] = prev_item.get("summary", "신청기간이 만료되었거나 제외된 공고입니다.")
+            info = extract_structured_info(
+                prev_item.get("summary", ""),
+                prev_item.get("detail_text", ""),
+                title=post["title"],
+            )
+            post["project_content"] = info["project_content"]
+            post["support_count"] = info["support_count"]
+            post["support_amount"] = info["support_amount"]
+            post["summary"] = info["summary"]
             post["detail_text"] = prev_item.get("detail_text", post["summary"])
 
         existing_items_map[post["id"]] = post
@@ -942,21 +1279,33 @@ def main():
             matched_items.append(post)
             new_seen_ids.add(post["id"])
 
+    # 기존 보관함 항목 중 아직 구조화 필드(project_content 등)가 없는 항목도 함께 보강
+    for ex_id, ex_item in existing_items_map.items():
+        if ex_id not in deleted_ids and not ex_item.get("project_content"):
+            if ex_item not in posts_needing_summary:
+                posts_needing_summary.append(ex_item)
+
     if posts_needing_summary:
-        print(f"- 신규 공고 상세 개요 및 AI 분석용 본문 추출 중 ({len(posts_needing_summary)}건)...")
+        print(f"- 공고 상세 개요(사업내용·지원수·기업당 지원금) 및 AI 분석용 본문 추출 중 ({len(posts_needing_summary)}건)...")
         with ThreadPoolExecutor(max_workers=8) as executor:
             futures = [
-                (p, executor.submit(fetch_post_summary_and_detail, p["url"], p["site"]))
+                (p, executor.submit(fetch_post_summary_and_detail, p["url"], p["site"], p.get("title", "")))
                 for p in posts_needing_summary
             ]
             for p, fut in futures:
                 try:
-                    summary_txt, detail_txt = fut.result()
+                    summary_txt, detail_txt, info = fut.result()
                     p["summary"] = summary_txt
                     p["detail_text"] = detail_txt
+                    p["project_content"] = info.get("project_content", "")
+                    p["support_count"] = info.get("support_count", "공고문 참조")
+                    p["support_amount"] = info.get("support_amount", "공고문 참조")
                 except Exception:
                     p["summary"] = "상세 내용은 [공고 보기]를 눌러 확인해 주세요."
                     p["detail_text"] = p["summary"]
+                    p["project_content"] = p.get("title", "")
+                    p["support_count"] = "공고문 참조"
+                    p["support_amount"] = "공고문 참조"
 
     # 전체 아이템(활성 + 삭제/만료 보관분 최대 500건) 저장
     all_stored_items = list(existing_items_map.values())[:500]

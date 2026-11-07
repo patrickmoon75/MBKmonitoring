@@ -923,35 +923,92 @@
     }
 
     /**
-     * 한 줄로 붙어있는 공고 개요 텍스트를 주요 항목별로 줄바꿈하고 라벨을 강조합니다.
+     * 공고 객체(item)에서 사업내용(첫 줄), 지원수, 기업당 지원금 및 항목별 세부 개요 HTML을 생성합니다.
      */
-    function formatSummaryHtml(rawText) {
-      if (!rawText) return "상세 내용은 [공고 보기]를 눌러 원문에서 확인해 주세요.";
-      let text = escapeHtml(rawText);
+    function formatSummaryHtml(itemOrText) {
+      const isObj = itemOrText && typeof itemOrText === "object";
+      const rawText = isObj ? (itemOrText.summary || "") : String(itemOrText || "");
+      const detailText = isObj ? (itemOrText.detail_text || rawText) : rawText;
+      const titleText = isObj ? (itemOrText.title || "") : "";
 
-      // 불필요한 머리말 정리
-      text = text.replace(/^신청방법 및 대상\s*/, "");
+      if (!rawText && !detailText) {
+        return "상세 내용은 [공고 보기]를 눌러 원문에서 확인해 주세요.";
+      }
+
+      // 1. 사업내용 (project_content) 확보
+      let projectContent = isObj && itemOrText.project_content ? itemOrText.project_content : "";
+      const combined = `${rawText} ${detailText}`.replace(/\s+/g, " ").trim();
+
+      if (!projectContent) {
+        const mEg = combined.match(/사업담당\s+(.+?)(?=\s*(?:☞|신청자격|사업신청|접수\(신청\)기간|문의처|$))/);
+        const mBz = combined.match(/사업개요\s+(?!지원사업명)(.+?)(?=\s*(?:☞|사업신청|신청자격|문의처|$))/);
+        const mIntro = combined.match(/([가-힣A-Za-z0-9\s,·()「」『』【】\[\]"'ㆍ\-]{20,260}?(?:모집하오니|모집합니다|추진하오니|공고합니다|안내합니다)[^.!?☞□■]{0,50}[.!?]?)/);
+        if (mEg) projectContent = mEg[1].trim();
+        else if (mBz) projectContent = mBz[1].trim();
+        else if (mIntro) projectContent = mIntro[1].replace(/^.*?(?:신청기간|접수기간|신청대상|지원대상|사업담당|사업개요)\s*/, "").trim();
+        else projectContent = titleText || rawText.slice(0, 160);
+      }
+
+      // 2. 지원수 (support_count) & 기업당 지원금 (support_amount) 확보
+      const supportCount = (isObj && itemOrText.support_count) ? itemOrText.support_count : "공고문 참조 (본문 미기재)";
+      const supportAmount = (isObj && itemOrText.support_amount) ? itemOrText.support_amount : "공고문 참조 (본문 미기재)";
+
+      // 3. 하단 세부 항목 텍스트 정리 (이미 상단에 표시된 사업내용/지원수/기업당 지원금 및 불필요한 메타 헤더 제거)
+      let bodyText = rawText;
+      bodyText = bodyText.replace(/^사업내용\s+.+?지원수\s+.+?기업당 지원금\s+.+?(?=\s*(?:☞|신청기간|접수기간|공고기간|신청방법|신청대상|지원대상|지원내용|입주모집개요|모집개요|교육안내|소관부처|수행기관|문의처|$))/, "").trim();
+      bodyText = bodyText.replace(/^사업개요\s+지원사업명\s+.+?사업담당\s+/, "").trim();
+      bodyText = bodyText.replace(/^소관부처·지자체\s+.+?사업개요\s+/, "").trim();
+      bodyText = bodyText.replace(/^신청방법 및 대상\s*/, "").trim();
+
+      if (projectContent && projectContent.length > 20) {
+        const prefix = projectContent.slice(0, 30);
+        const idx = bodyText.indexOf(prefix);
+        if (idx !== -1) {
+          const rest = bodyText.slice(idx);
+          const mNext = rest.match(/(☞|신청기간|접수기간|신청방법|신청대상|지원대상|지원내용|입주모집개요|모집개요|교육안내|문의처)/);
+          if (mNext) {
+            bodyText = rest.slice(mNext.index).trim();
+          }
+        }
+      }
+
+      let escapedBody = escapeHtml(bodyText);
 
       // 주요 섹션 라벨 앞에서 줄바꿈 및 뱃지 스타일 적용
       const labels = [
         "신청기간", "접수기간", "공고기간", "신청방법", "접수방법", "신청대상", "지원대상",
         "제외대상", "신청 시 요청하는 정보", "사업개요", "공고 개요", "지원내용", "지원규모",
+        "입주모집개요", "모집개요", "교육안내", "세부내용",
         "소관부처·지자체", "소관부처", "사업수행기관", "수행기관", "문의처", "진행구분", "관련사이트"
       ];
 
       labels.forEach(label => {
         const reg = new RegExp(`(?:^|\\s+)(${label})(?=\\s)`, "g");
-        text = text.replace(reg, `<br><span class="summary-label">$1</span>`);
+        escapedBody = escapedBody.replace(reg, `<br><span class="summary-label">$1</span>`);
       });
 
       // 기호(※, ☞, ㅇ, □, ■, - ) 앞에서 줄바꿈 처리
-      text = text.replace(/\s+(※|☞|□|■|ㅇ(?=\s))/g, "<br>$1");
-      text = text.replace(/\s+(-\s)/g, "<br>&nbsp;&nbsp;$1");
+      escapedBody = escapedBody.replace(/\s+(※|☞|□|■|ㅇ(?=\s))/g, "<br>$1");
+      escapedBody = escapedBody.replace(/\s+(-\s)/g, "<br>&nbsp;&nbsp;$1");
+      escapedBody = escapedBody.replace(/^(<br>\s*)+/, "");
 
-      // 맨 앞 불필요한 <br> 제거
-      text = text.replace(/^(<br>\s*)+/, "");
-
-      return text;
+      return `
+        <div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px dashed #cbd5e1;line-height:1.6;">
+          <span class="summary-label" style="background:#dbeafe;color:#1e3a8a;font-size:13px;padding:2px 8px;">사업내용</span>
+          <strong style="color:#111827;font-size:13.5px;">${escapeHtml(projectContent)}</strong>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:10px;padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;">
+          <div>
+            <span class="summary-label" style="background:#dcfce7;color:#166534;">지원수(규모)</span>
+            <strong style="color:#065f46;">${escapeHtml(supportCount)}</strong>
+          </div>
+          <div>
+            <span class="summary-label" style="background:#fef3c7;color:#92400e;">기업당 지원금</span>
+            <strong style="color:#92400e;">${escapeHtml(supportAmount)}</strong>
+          </div>
+        </div>
+        <div style="font-size:13px;color:#374151;line-height:1.65;">${escapedBody}</div>
+      `;
     }
 
     async function loadData() {
@@ -1397,6 +1454,9 @@
 - 공고명: ${item.title}
 - 출처/주관기관: ${item.site} / ${item.agency || ""}
 - 접수기간/등록일: ${item.period || item.reg_date || "-"}
+- 사업내용 요약: ${item.project_content || "-"}
+- 지원수(규모): ${item.support_count || "-"}
+- 기업당 지원금: ${item.support_amount || "-"}
 - 원문 링크: ${item.url}
 - 추출된 공고 본문 내용:
 ${contextText}
@@ -1567,7 +1627,7 @@ ${contextText}
         const isDeleted = serverData.deleted_ids.includes(item.id);
         const isChecked = selectedIds.has(item.id) ? "checked" : "";
         const safeId = item.id.replace(/[^A-Za-z0-9_-]/g, "_");
-        const formattedSummary = formatSummaryHtml(item.summary);
+        const formattedSummary = formatSummaryHtml(item);
         const qCount = (qaHistoryMap[item.id] || []).length;
         const qBadge = qCount > 0 ? `<span class="badge" style="background:#f3e8ff;color:#6d28d9;">💬 질문 ${qCount}</span>` : "";
 
