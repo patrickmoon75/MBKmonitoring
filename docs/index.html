@@ -533,7 +533,7 @@
     }
     .sync-banner {
       background: #fffbeb;
-      border: 1px solid #fde68a;
+      border: 1px solid #f59e0b;
       color: #92400e;
       padding: 10px 16px;
       border-radius: 8px;
@@ -543,6 +543,57 @@
       align-items: center;
       font-size: 13px;
       font-weight: 600;
+      position: sticky;
+      top: 10px;
+      z-index: 950;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    .sort-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      padding: 4px 8px;
+      border-radius: 8px;
+      font-size: 12.5px;
+    }
+    .sort-btn {
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      font-weight: 600;
+      border: 1px solid transparent;
+      background: transparent;
+      color: #4b5563;
+      cursor: pointer;
+      transition: 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .sort-btn:hover {
+      background: #e2e8f0;
+      color: #111827;
+    }
+    .sort-btn.active {
+      background: var(--primary);
+      color: #ffffff;
+      font-weight: 700;
+      box-shadow: 0 1px 3px rgba(30, 58, 138, 0.25);
+    }
+    .list-count-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: #eff6ff;
+      color: #1e3a8a;
+      border: 1px solid #bfdbfe;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
     }
   </style>
 </head>
@@ -630,15 +681,21 @@
 
       <div class="filters">
         <div class="filter-tabs" id="siteTabs">
-          <button class="tab active" onclick="setSiteFilter('ALL')">전체 보기</button>
+          <button class="tab active" id="tab_ALL" onclick="setSiteFilter('ALL')">전체 보기 (0)</button>
           <button class="tab" id="favTabBtn" onclick="setSiteFilter('FAV')" style="color:#b45309;border-color:#fde68a;background:#fffbeb;">⭐ 관심공고 (0)</button>
-          <button class="tab" onclick="setSiteFilter('K-Startup')">K-Startup</button>
-          <button class="tab" onclick="setSiteFilter('기업마당')">기업마당</button>
-          <button class="tab" onclick="setSiteFilter('경기기업비서(이지비즈)')">경기기업비서</button>
-          <button class="tab" onclick="setSiteFilter('한국콘텐츠진흥원(KOCCA)')">한국콘텐츠진흥원</button>
-          <button class="tab" id="deletedTabBtn" onclick="setSiteFilter('DELETED')" style="color:#dc2626;">🗑️ 삭제(제외)함</button>
+          <button class="tab" id="tab_KStartup" onclick="setSiteFilter('K-Startup')">K-Startup (0)</button>
+          <button class="tab" id="tab_Bizinfo" onclick="setSiteFilter('기업마당')">기업마당 (0)</button>
+          <button class="tab" id="tab_Egbiz" onclick="setSiteFilter('경기기업비서(이지비즈)')">경기기업비서 (0)</button>
+          <button class="tab" id="tab_Kocca" onclick="setSiteFilter('한국콘텐츠진흥원(KOCCA)')">한국콘텐츠진흥원 (0)</button>
+          <button class="tab" id="deletedTabBtn" onclick="setSiteFilter('DELETED')" style="color:#dc2626;">🗑️ 삭제(제외)함 (0)</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <span class="list-count-badge" id="listCountBadge">📋 리스트: 총 0건</span>
+          <div class="sort-group" title="공고일 또는 마감일 기준으로 리스트를 정렬합니다 (같은 버튼을 다시 누르면 오름차순/내림차순 전환)">
+            <strong style="color:#374151;margin:0 2px 0 4px;">↕️ 정렬:</strong>
+            <button class="sort-btn active" id="sortBtn_reg" onclick="setSortOrder('reg')">📅 공고일순 ↓</button>
+            <button class="sort-btn" id="sortBtn_end" onclick="setSortOrder('end')">⏰ 마감일순 ↑</button>
+          </div>
           <button class="btn btn-danger" id="bulkDeleteBtn" style="display:none;padding:8px 14px;" onclick="bulkActionSelected()">
             🗑️ 선택 항목 일괄 삭제 (0건)
           </button>
@@ -649,13 +706,16 @@
       <table>
         <thead>
           <tr>
-            <th style="width:68px;text-align:center;">
+            <th style="width:82px;text-align:center;">
               <input type="checkbox" id="selectAllCheckbox" style="width:16px;height:16px;cursor:pointer;vertical-align:middle;" onclick="toggleSelectAll(this.checked)" title="현재 목록 전체 선택/해제" />
               <span style="font-size:12px;color:#b45309;margin-left:2px;" title="별표(☆) 클릭 시 관심공고로 지정되어 최상단에 고정됩니다">⭐</span>
             </th>
             <th style="width:150px;">출처 / 기관</th>
             <th>지원사업 공고명 ('📄 개요' 클릭 시 좌측 개요·질문기록 + 우측 AI 답변창 확장)</th>
-            <th style="width:170px;">접수기간 / 등록일</th>
+            <th style="width:195px;">
+              <span style="cursor:pointer;text-decoration:underline dotted;" onclick="setSortOrder('reg')" title="클릭 시 공고일 기준 정렬">공고일</span> /
+              <span style="cursor:pointer;text-decoration:underline dotted;" onclick="setSortOrder('end')" title="클릭 시 마감일 기준 정렬">마감일(접수기간)</span>
+            </th>
             <th style="width:280px;text-align:center;">개요·AI질문 / 원문 / 삭제</th>
           </tr>
         </thead>
@@ -710,11 +770,23 @@
     const REPO_OWNER = "patrickmoon75";
     const REPO_NAME = "MBKmonitoring";
 
+    // 사용자가 수동 복구한 ID, 수동 삭제한 ID, 삭제한 공고 제목을 스크립트 시작 즉시 로드 (비동기 로드 전 유실 방지)
+    let manualRestoredIds = new Set(JSON.parse(localStorage.getItem("mbk_restored_expired_ids") || "[]"));
+    let userDeletedIds = new Set(JSON.parse(localStorage.getItem("mbk_user_deleted_ids") || "[]"));
+    let deletedTitles = new Set(JSON.parse(localStorage.getItem("mbk_deleted_titles") || "[]"));
+    const initialLocalDel = Array.from(new Set([
+      ...JSON.parse(localStorage.getItem("mbk_local_deleted_ids") || "[]"),
+      ...Array.from(userDeletedIds)
+    ])).filter(id => !manualRestoredIds.has(id));
+    const initialLocalFav = JSON.parse(localStorage.getItem("mbk_local_favorite_ids") || "[]");
+
     let serverData = {
       updated_at: "",
       items: [],
-      deleted_ids: [],
-      favorite_ids: [],
+      deleted_ids: initialLocalDel,
+      deleted_titles: Array.from(deletedTitles),
+      restored_ids: Array.from(manualRestoredIds),
+      favorite_ids: Array.isArray(initialLocalFav) ? initialLocalFav : [],
       search_days: 30,
       auto_archive_expired: true,
       keywords: ["AI", "인공지능", "AX", "로봇", "창업", "벤처", "스타트업"],
@@ -727,13 +799,17 @@
       },
       custom_sites: []
     };
+    let isDataLoaded = false;
     let currentSiteFilter = "ALL";
     let currentPeriodPreset = "ALL";
+    let currentSortBy = localStorage.getItem("mbk_sort_by") || "reg"; // 'reg'(공고일) | 'end'(마감일)
+    let currentSortDir = localStorage.getItem("mbk_sort_dir") || (currentSortBy === "end" ? "asc" : "desc");
     let hasUnsavedChanges = false;
+    let hasConfigChanges = false;
+    let isSyncingToGitHub = false;
+    let pendingSyncRequest = false;
+    let syncDebounceTimer = null;
     let pendingAskItemId = null;
-
-    // 사용자가 기간만료 공고를 수동 복구한 경우 다시 자동 삭제되지 않도록 기억
-    let manualRestoredIds = new Set(JSON.parse(localStorage.getItem("mbk_restored_expired_ids") || "[]"));
 
     // 다중 선택된 공고 ID 목록
     let selectedIds = new Set();
@@ -742,6 +818,13 @@
 
     // 공고별 질문/답변 누적 기록 { [itemId]: [ { id, question, answer, time } ] }
     let qaHistoryMap = {};
+
+    window.addEventListener("beforeunload", (e) => {
+      if (isSyncingToGitHub || syncDebounceTimer) {
+        e.preventDefault();
+        e.returnValue = "서버에 변경사항을 저장하는 중입니다.";
+      }
+    });
 
     function getTodayStr() {
       const now = new Date();
@@ -815,10 +898,52 @@
       if (!regNorm && startDate) regNorm = startDate;
       if (!startDate && regNorm) startDate = regNorm;
 
+      // 경기기업비서(이지비즈)는 mdfcnDt가 매일 당일로 갱신되므로 신청시작일(startDate)을 공고일로 우선 사용
+      if (item.site && item.site.includes("경기기업비서") && startDate) {
+        regNorm = startDate;
+      }
+
       item.start_date = startDate;
       item.end_date = endDate;
       item.reg_date_norm = regNorm;
       return { startDate, endDate, regNorm };
+    }
+
+    function setSortOrder(sortBy, forceDir = null) {
+      if (forceDir) {
+        currentSortBy = sortBy;
+        currentSortDir = forceDir;
+      } else if (currentSortBy === sortBy) {
+        currentSortDir = currentSortDir === "desc" ? "asc" : "desc";
+      } else {
+        currentSortBy = sortBy;
+        currentSortDir = sortBy === "end" ? "asc" : "desc";
+      }
+      localStorage.setItem("mbk_sort_by", currentSortBy);
+      localStorage.setItem("mbk_sort_dir", currentSortDir);
+      updateSortButtonsUI();
+      renderTable();
+      const label = currentSortBy === "reg"
+        ? (currentSortDir === "desc" ? "📅 공고일 최신순(↓)" : "📅 공고일 오래된순(↑)")
+        : (currentSortDir === "asc" ? "⏰ 마감일 임박순(↑)" : "⏰ 마감일 여유순(↓)");
+      showToast(`정렬 기준이 [${label}]으로 변경되었습니다.`);
+    }
+
+    function updateSortButtonsUI() {
+      const regBtn = document.getElementById("sortBtn_reg");
+      const endBtn = document.getElementById("sortBtn_end");
+      if (regBtn) {
+        const isReg = currentSortBy === "reg";
+        regBtn.classList.toggle("active", isReg);
+        const arrow = isReg ? (currentSortDir === "desc" ? "↓ (최신순)" : "↑ (오래된순)") : "↕";
+        regBtn.innerHTML = `📅 공고일순 ${arrow}`;
+      }
+      if (endBtn) {
+        const isEnd = currentSortBy === "end";
+        endBtn.classList.toggle("active", isEnd);
+        const arrow = isEnd ? (currentSortDir === "asc" ? "↑ (마감임박순)" : "↓ (마감여유순)") : "↕";
+        endBtn.innerHTML = `⏰ 마감일순 ${arrow}`;
+      }
     }
 
     function autoArchiveExpiredItems() {
@@ -869,9 +994,10 @@
       } else {
         showToast("신청기간 만료 공고 자동 이동 기능이 해제되었습니다.");
       }
-      markChanged();
+      markChanged(true);
       renderTable();
       updateHeaderStatus();
+      scheduleGitHubSync(true, true);
     }
 
     function setPeriodPreset(preset) {
@@ -939,15 +1065,44 @@
       setTimeout(() => { t.style.display = "none"; }, 3400);
     }
 
-    function markChanged() {
+    function persistDeletionStateToLocal() {
+      userDeletedIds.forEach(id => {
+        if (!manualRestoredIds.has(id) && !serverData.deleted_ids.includes(id)) {
+          serverData.deleted_ids.push(id);
+        }
+      });
+      serverData.deleted_ids = Array.from(new Set(serverData.deleted_ids)).filter(id => !manualRestoredIds.has(id));
+      serverData.deleted_titles = Array.from(deletedTitles);
+      serverData.restored_ids = Array.from(manualRestoredIds);
+
+      localStorage.setItem("mbk_local_deleted_ids", JSON.stringify(serverData.deleted_ids));
+      localStorage.setItem("mbk_user_deleted_ids", JSON.stringify(Array.from(userDeletedIds)));
+      localStorage.setItem("mbk_deleted_titles", JSON.stringify(Array.from(deletedTitles)));
+      localStorage.setItem("mbk_restored_expired_ids", JSON.stringify(Array.from(manualRestoredIds)));
+    }
+
+    function markChanged(configChanged = false) {
       hasUnsavedChanges = true;
+      if (configChanged) hasConfigChanges = true;
       document.getElementById("unsavedBanner").style.display = "flex";
       document.getElementById("syncBtn").style.display = "inline-flex";
-      localStorage.setItem("mbk_local_deleted_ids", JSON.stringify(serverData.deleted_ids));
+      persistDeletionStateToLocal();
       localStorage.setItem("mbk_local_favorite_ids", JSON.stringify(serverData.favorite_ids));
       localStorage.setItem("mbk_local_keywords", JSON.stringify(serverData.keywords));
       localStorage.setItem("mbk_local_exclude_keywords", JSON.stringify(serverData.exclude_keywords));
       localStorage.setItem("mbk_local_custom_sites", JSON.stringify(serverData.custom_sites));
+    }
+
+    function scheduleGitHubSync(configChanged = false, silent = true) {
+      if (configChanged) hasConfigChanges = true;
+      if (!localStorage.getItem("mbk_github_token")) {
+        return;
+      }
+      if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+      syncDebounceTimer = setTimeout(() => {
+        syncDebounceTimer = null;
+        syncToGitHub(silent);
+      }, 350);
     }
 
     function toggleFavorite(id) {
@@ -958,13 +1113,11 @@
       } else {
         serverData.favorite_ids.splice(idx, 1);
       }
-      markChanged();
+      markChanged(false);
       renderTable();
       updateHeaderStatus();
       showToast(isAdding ? "⭐ 관심공고로 체크되어 목록 최상단에 배치되었습니다! (마감일 경과 시에는 삭제함으로 자동 이동됩니다)" : "관심공고 체크가 해제되었습니다.");
-      if (localStorage.getItem("mbk_github_token")) {
-        syncToGitHub(true);
-      }
+      scheduleGitHubSync(false, true);
     }
 
     /**
@@ -1058,13 +1211,18 @@
 
     async function loadData() {
       loadQaHistory();
+      updateSortButtonsUI();
+      let serverDeletedIdsFromJson = new Set();
+
       try {
-        const res = await fetch("./data.json?t=" + Date.now());
+        const res = await fetch("./data.json?t=" + Date.now(), { cache: "no-store" });
         if (res.ok) {
           const json = await res.json();
           serverData.updated_at = json.updated_at || "";
           serverData.items = json.items || [];
-          serverData.deleted_ids = json.deleted_ids || [];
+          (json.deleted_ids || []).forEach(id => serverDeletedIdsFromJson.add(id));
+          (json.deleted_titles || []).forEach(t => deletedTitles.add(t));
+          (json.restored_ids || []).forEach(id => manualRestoredIds.add(id));
           serverData.favorite_ids = json.favorite_ids || [];
           if (typeof json.search_days === "number") serverData.search_days = json.search_days;
           if (typeof json.auto_archive_expired === "boolean") serverData.auto_archive_expired = json.auto_archive_expired;
@@ -1077,6 +1235,32 @@
         console.warn("data.json 로드 실패:", e);
       }
 
+      // GitHub 토큰이 설정된 경우 GitHub Pages CDN 지연(최대 5~10분)을 우회하여 GitHub API에서 최신 삭제/관심 목록 즉시 병합
+      const ghToken = localStorage.getItem("mbk_github_token");
+      if (ghToken) {
+        try {
+          const apiUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/docs/data.json?t=${Date.now()}`;
+          const apiRes = await fetch(apiUrl, {
+            cache: "no-store",
+            headers: { "Authorization": `Bearer ${ghToken}`, "Accept": "application/vnd.github+json" }
+          });
+          if (apiRes.ok) {
+            const apiFile = await apiRes.json();
+            if (apiFile && apiFile.content) {
+              const apiJson = JSON.parse(base64ToUtf8(apiFile.content));
+              (apiJson.deleted_ids || []).forEach(id => serverDeletedIdsFromJson.add(id));
+              (apiJson.deleted_titles || []).forEach(t => deletedTitles.add(t));
+              (apiJson.restored_ids || []).forEach(id => manualRestoredIds.add(id));
+              if (Array.isArray(apiJson.favorite_ids) && apiJson.favorite_ids.length > 0 && serverData.favorite_ids.length === 0) {
+                serverData.favorite_ids = apiJson.favorite_ids;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("GitHub API 최신 데이터 확인 실패:", e);
+        }
+      }
+
       const localAutoExp = localStorage.getItem("mbk_auto_archive_expired");
       if (localAutoExp !== null) {
         serverData.auto_archive_expired = JSON.parse(localAutoExp);
@@ -1084,10 +1268,24 @@
       const expChk = document.getElementById("autoExpireCheckbox");
       if (expChk) expChk.checked = serverData.auto_archive_expired !== false;
 
+      // 로컬 저장소의 삭제 목록(mbk_local_deleted_ids, mbk_user_deleted_ids)과 서버 삭제 목록을 완벽 병합
       const localDel = JSON.parse(localStorage.getItem("mbk_local_deleted_ids") || "[]");
-      localDel.forEach(id => {
-        if (!serverData.deleted_ids.includes(id)) serverData.deleted_ids.push(id);
+      const mergedDelSet = new Set([
+        ...Array.from(serverDeletedIdsFromJson),
+        ...localDel,
+        ...Array.from(userDeletedIds)
+      ]);
+      manualRestoredIds.forEach(id => mergedDelSet.delete(id));
+
+      // 삭제된 공고 제목과 동일한 공고(재등록/타사이트 중복 등)도 자동으로 삭제함 처리
+      serverData.items.forEach(item => {
+        const t = (item.title || "").trim();
+        if (t && deletedTitles.has(t) && !manualRestoredIds.has(item.id)) {
+          mergedDelSet.add(item.id);
+        }
       });
+
+      serverData.deleted_ids = Array.from(mergedDelSet);
 
       const localFav = JSON.parse(localStorage.getItem("mbk_local_favorite_ids") || "null");
       if (localFav && Array.isArray(localFav)) {
@@ -1103,6 +1301,22 @@
       const autoMovedCount = autoArchiveExpiredItems();
       if (autoMovedCount > 0) {
         showToast(`⏰ 신청기간이 지난 공고 ${autoMovedCount}건을 자동으로 삭제(제외)함으로 이동했습니다.`);
+      }
+
+      // 병합된 최종 삭제 상태를 로컬 스토리지에 재저장
+      persistDeletionStateToLocal();
+      isDataLoaded = true;
+
+      // 만약 로컬에서 삭제했던 항목이 서버(data.json)에 아직 반영되어 있지 않다면 자동 동기화 또는 배너 표시
+      const hasUnsyncedDeletions = serverData.deleted_ids.some(id => !serverDeletedIdsFromJson.has(id));
+      if (hasUnsyncedDeletions) {
+        if (ghToken) {
+          scheduleGitHubSync(false, true);
+        } else {
+          hasUnsavedChanges = true;
+          document.getElementById("unsavedBanner").style.display = "flex";
+          document.getElementById("syncBtn").style.display = "inline-flex";
+        }
       }
 
       // 저장된 검색기간 프리셋 복원
@@ -1135,20 +1349,31 @@
     }
 
     function updateHeaderStatus() {
-      const activeCount = serverData.items.filter(i => !serverData.deleted_ids.includes(i.id)).length;
-      const favActiveCount = serverData.items.filter(i => serverData.favorite_ids.includes(i.id) && !serverData.deleted_ids.includes(i.id)).length;
+      const activeItems = serverData.items.filter(i => !serverData.deleted_ids.includes(i.id));
+      const activeCount = activeItems.length;
+      const favActiveCount = activeItems.filter(i => serverData.favorite_ids.includes(i.id)).length;
       const delItemsCount = serverData.items.filter(i => serverData.deleted_ids.includes(i.id)).length;
       const expiredDelCount = serverData.items.filter(i => i.expired && serverData.deleted_ids.includes(i.id)).length;
+
+      const kstartupCount = activeItems.filter(i => i.site === "K-Startup").length;
+      const bizinfoCount = activeItems.filter(i => i.site === "기업마당").length;
+      const egbizCount = activeItems.filter(i => i.site === "경기기업비서(이지비즈)").length;
+      const koccaCount = activeItems.filter(i => i.site === "한국콘텐츠진흥원(KOCCA)").length;
+
       document.getElementById("statusText").innerHTML =
         `마지막 서버 업데이트: <strong>${serverData.updated_at || '방금 전'}</strong> | 진행중 공고: <strong>${activeCount}건</strong> (⭐ 관심 <strong>${favActiveCount}건</strong>) | 삭제(제외)함: <strong>${delItemsCount}건</strong> (기간만료 자동이동 ${expiredDelCount}건)`;
-      const delTab = document.getElementById("deletedTabBtn");
-      if (delTab) {
-        delTab.innerHTML = `🗑️ 삭제(제외)함 (${delItemsCount})`;
-      }
-      const favTab = document.getElementById("favTabBtn");
-      if (favTab) {
-        favTab.innerHTML = `⭐ 관심공고 (${favActiveCount})`;
-      }
+
+      const setTabHtml = (id, html) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+      };
+      setTabHtml("tab_ALL", `전체 보기 (${activeCount})`);
+      setTabHtml("favTabBtn", `⭐ 관심공고 (${favActiveCount})`);
+      setTabHtml("tab_KStartup", `K-Startup (${kstartupCount})`);
+      setTabHtml("tab_Bizinfo", `기업마당 (${bizinfoCount})`);
+      setTabHtml("tab_Egbiz", `경기기업비서 (${egbizCount})`);
+      setTabHtml("tab_Kocca", `한국콘텐츠진흥원 (${koccaCount})`);
+      setTabHtml("deletedTabBtn", `🗑️ 삭제(제외)함 (${delItemsCount})`);
     }
 
     function renderKeywords() {
@@ -1238,22 +1463,18 @@
 
       nameInp.value = "";
       urlInp.value = "";
-      markChanged();
+      markChanged(true);
       renderSites();
       showToast(`🌐 '${name}' 사이트가 모니터링 목록에 추가되었습니다!`);
-      if (localStorage.getItem("mbk_github_token")) {
-        syncToGitHub(true);
-      }
+      scheduleGitHubSync(true, true);
     }
 
     function removeCustomSite(idx) {
       const removed = serverData.custom_sites.splice(idx, 1);
-      markChanged();
+      markChanged(true);
       renderSites();
       showToast(`'${removed[0]?.name || '사이트'}'가 목록에서 제거되었습니다.`);
-      if (localStorage.getItem("mbk_github_token")) {
-        syncToGitHub(true);
-      }
+      scheduleGitHubSync(true, true);
     }
 
     function addKeyword() {
@@ -1262,18 +1483,20 @@
       if (!val) return;
       if (!serverData.keywords.includes(val)) {
         serverData.keywords.push(val);
-        markChanged();
+        markChanged(true);
         renderKeywords();
         showToast(`'${val}' 키워드가 추가되었습니다.`);
+        scheduleGitHubSync(true, true);
       }
       inp.value = "";
     }
 
     function removeKeyword(idx) {
       const removed = serverData.keywords.splice(idx, 1);
-      markChanged();
+      markChanged(true);
       renderKeywords();
       showToast(`'${removed}' 키워드가 삭제되었습니다.`);
+      scheduleGitHubSync(true, true);
     }
 
     function addExcludeKeyword() {
@@ -1282,18 +1505,20 @@
       if (!val) return;
       if (!serverData.exclude_keywords.includes(val)) {
         serverData.exclude_keywords.push(val);
-        markChanged();
+        markChanged(true);
         renderKeywords();
         showToast(`'${val}' 제외 키워드가 추가되었습니다.`);
+        scheduleGitHubSync(true, true);
       }
       inp.value = "";
     }
 
     function removeExcludeKeyword(idx) {
       const removed = serverData.exclude_keywords.splice(idx, 1);
-      markChanged();
+      markChanged(true);
       renderKeywords();
       showToast(`'${removed}' 제외 키워드가 삭제되었습니다.`);
+      scheduleGitHubSync(true, true);
     }
 
     function setSiteFilter(site) {
@@ -1371,32 +1596,40 @@
       if (ids.length === 0) return;
 
       if (currentSiteFilter === "DELETED") {
-        ids.forEach(id => manualRestoredIds.add(id));
-        localStorage.setItem("mbk_restored_expired_ids", JSON.stringify(Array.from(manualRestoredIds)));
+        ids.forEach(id => {
+          manualRestoredIds.add(id);
+          userDeletedIds.delete(id);
+          const item = serverData.items.find(i => i.id === id);
+          if (item && item.title) deletedTitles.delete(item.title.trim());
+        });
         serverData.deleted_ids = serverData.deleted_ids.filter(id => !selectedIds.has(id));
         selectedIds.clear();
-        markChanged();
+        markChanged(false);
         renderTable();
         updateHeaderStatus();
         showToast(`♻️ 선택한 ${ids.length}건의 공고를 보관함으로 일괄 복구했습니다.`);
       } else {
         ids.forEach(id => {
           manualRestoredIds.delete(id);
+          userDeletedIds.add(id);
           if (!serverData.deleted_ids.includes(id)) {
             serverData.deleted_ids.push(id);
           }
+          const item = serverData.items.find(i => i.id === id);
+          if (item && item.title) deletedTitles.add(item.title.trim());
         });
-        localStorage.setItem("mbk_restored_expired_ids", JSON.stringify(Array.from(manualRestoredIds)));
         selectedIds.clear();
-        markChanged();
+        markChanged(false);
         renderTable();
         updateHeaderStatus();
-        showToast(`🗑️ 선택한 ${ids.length}건의 공고를 일괄 삭제(제외)했습니다.`);
+        showToast(
+          localStorage.getItem("mbk_github_token")
+            ? `🗑️ 선택한 ${ids.length}건의 공고를 일괄 삭제하고 서버에 저장합니다.`
+            : `🗑️ 선택한 ${ids.length}건의 공고를 삭제했습니다. (상단 [☁️ 서버에 저장하기]를 누르면 다른 기기/내일 리포트에도 영구 반영됩니다)`
+        );
       }
 
-      if (localStorage.getItem("mbk_github_token")) {
-        syncToGitHub(true);
-      }
+      scheduleGitHubSync(false, true);
     }
 
     function toggleSummary(itemId, safeId) {
@@ -1599,33 +1832,43 @@ ${contextText}
 
     function deleteItem(id, fromEmail = false) {
       manualRestoredIds.delete(id);
-      localStorage.setItem("mbk_restored_expired_ids", JSON.stringify(Array.from(manualRestoredIds)));
+      userDeletedIds.add(id);
       if (!serverData.deleted_ids.includes(id)) {
         serverData.deleted_ids.push(id);
       }
+      const item = serverData.items.find(i => i.id === id);
+      if (item && item.title) {
+        deletedTitles.add(item.title.trim());
+      }
       selectedIds.delete(id);
-      markChanged();
+      markChanged(false);
       renderTable();
       updateHeaderStatus();
-      showToast(fromEmail ? "🗑️ 이메일에서 선택한 공고를 제외 처리했습니다. [서버에 저장하기]를 누르면 영구 반영됩니다." : "🗑️ 해당 공고를 목록에서 삭제(제외)했습니다.");
 
-      if (localStorage.getItem("mbk_github_token")) {
-        syncToGitHub(true);
+      const hasToken = Boolean(localStorage.getItem("mbk_github_token"));
+      if (fromEmail) {
+        showToast(hasToken ? "🗑️ 이메일에서 선택한 공고를 삭제하고 서버에 저장합니다." : "🗑️ 이메일에서 선택한 공고를 제외 처리했습니다. [서버에 저장하기]를 누르면 영구 반영됩니다.");
+      } else {
+        showToast(hasToken ? "🗑️ 해당 공고를 삭제하고 서버에 저장했습니다." : "🗑️ 해당 공고를 목록에서 삭제(제외)했습니다.");
       }
+
+      scheduleGitHubSync(false, true);
     }
 
     function restoreItem(id) {
       manualRestoredIds.add(id);
-      localStorage.setItem("mbk_restored_expired_ids", JSON.stringify(Array.from(manualRestoredIds)));
+      userDeletedIds.delete(id);
+      const item = serverData.items.find(i => i.id === id);
+      if (item && item.title) {
+        deletedTitles.delete(item.title.trim());
+      }
       serverData.deleted_ids = serverData.deleted_ids.filter(x => x !== id);
       selectedIds.delete(id);
-      markChanged();
+      markChanged(false);
       renderTable();
       updateHeaderStatus();
       showToast("♻️ 공고를 다시 보관함으로 복구했습니다.");
-      if (localStorage.getItem("mbk_github_token")) {
-        syncToGitHub(true);
-      }
+      scheduleGitHubSync(false, true);
     }
 
     function escapeHtml(str) {
@@ -1639,6 +1882,9 @@ ${contextText}
       const dateTo = document.getElementById("dateToInput")?.value || "";
       const dateTarget = document.getElementById("dateTargetType")?.value || "reg";
       const todayStr = getTodayStr();
+
+      const activeTotalCount = serverData.items.filter(item => !serverData.deleted_ids.includes(item.id)).length;
+      const deletedTotalCount = serverData.items.filter(item => serverData.deleted_ids.includes(item.id)).length;
 
       let list = [];
       if (currentSiteFilter === "DELETED") {
@@ -1673,20 +1919,61 @@ ${contextText}
         );
       }
 
-      // ⭐ 관심체크된 공고를 목록 최상단에 배치 (관심공고 간에는 체크한 순서 유지)
+      // ⭐ 관심공고 최상단 고정 + 사용자 선택 정렬(공고일 / 마감일) 적용
       const favSet = new Set(serverData.favorite_ids || []);
       list = [...list].sort((a, b) => {
         const aFav = favSet.has(a.id) ? 1 : 0;
         const bFav = favSet.has(b.id) ? 1 : 0;
         if (aFav !== bFav) return bFav - aFav;
-        if (aFav && bFav) {
-          return serverData.favorite_ids.indexOf(a.id) - serverData.favorite_ids.indexOf(b.id);
+
+        const aDates = extractItemDates(a);
+        const bDates = extractItemDates(b);
+        const aReg = aDates.regNorm || aDates.startDate || a.collected_date || "";
+        const bReg = bDates.regNorm || bDates.startDate || b.collected_date || "";
+        const aEnd = aDates.endDate || "";
+        const bEnd = bDates.endDate || "";
+
+        if (currentSortBy === "end") {
+          // 마감일 정렬: 마감일이 없는 항목(상시/단일일정)은 항상 하단 배치
+          const aHasEnd = Boolean(aEnd);
+          const bHasEnd = Boolean(bEnd);
+          if (aHasEnd !== bHasEnd) return aHasEnd ? -1 : 1;
+          if (aHasEnd && bHasEnd && aEnd !== bEnd) {
+            return currentSortDir === "asc" ? aEnd.localeCompare(bEnd) : bEnd.localeCompare(aEnd);
+          }
+          // 마감일이 같거나 둘 다 없으면 공고일 최신순으로 보조 정렬
+          if (aReg !== bReg) return bReg.localeCompare(aReg);
+        } else {
+          // 공고일 정렬: 공고일이 없는 항목은 하단 배치
+          const aHasReg = Boolean(aReg);
+          const bHasReg = Boolean(bReg);
+          if (aHasReg !== bHasReg) return aHasReg ? -1 : 1;
+          if (aHasReg && bHasReg && aReg !== bReg) {
+            return currentSortDir === "asc" ? aReg.localeCompare(bReg) : bReg.localeCompare(aReg);
+          }
+          // 공고일이 같으면 마감일 빠른순으로 보조 정렬
+          if (aEnd && bEnd && aEnd !== bEnd) return aEnd.localeCompare(bEnd);
         }
-        return 0;
+
+        return (a.id || "").localeCompare(b.id || "");
       });
 
       currentRenderedIds = list.map(i => i.id);
       updateBulkButton();
+
+      // 리스트 갯수 배지 업데이트
+      const countBadge = document.getElementById("listCountBadge");
+      if (countBadge) {
+        if (currentSiteFilter === "DELETED") {
+          countBadge.innerHTML = list.length === deletedTotalCount
+            ? `📋 삭제(제외) 리스트: 총 ${list.length}건`
+            : `📋 삭제(제외) 리스트: ${list.length}건 (전체 ${deletedTotalCount}건 중)`;
+        } else {
+          countBadge.innerHTML = list.length === activeTotalCount
+            ? `📋 리스트: 총 ${list.length}건`
+            : `📋 리스트: ${list.length}건 (전체 진행중 ${activeTotalCount}건 중)`;
+        }
+      }
 
       if (list.length === 0) {
         tbody.innerHTML = `
@@ -1710,8 +1997,10 @@ ${contextText}
         const qBadge = qCount > 0 ? `<span class="badge" style="background:#f3e8ff;color:#6d28d9;">💬 질문 ${qCount}</span>` : "";
         const favBadge = isFav ? `<span class="badge" style="background:#fef3c7;color:#b45309;border:1px solid #fde68a;">⭐ 관심공고</span>` : "";
 
-        // 마감일 D-Day 및 기간만료 뱃지 생성
-        const { endDate } = extractItemDates(item);
+        // 마감일 D-Day 및 기간만료 뱃지 생성 + 공고일/마감일 표시
+        const { startDate, endDate, regNorm } = extractItemDates(item);
+        const displayRegDate = regNorm || startDate || item.collected_date || "-";
+        const displayEndDate = endDate || (item.period && !item.period.includes(displayRegDate) ? item.period : "상시/별도공지");
         let statusBadge = "";
         if (endDate) {
           const dLeft = diffDaysBetween(todayStr, endDate);
@@ -1726,6 +2015,9 @@ ${contextText}
           statusBadge = `<span class="badge" style="background:#f3f4f6;color:#4b5563;">🗑️ 수동 제외</span>`;
         }
 
+        const regHighlight = currentSortBy === "reg" ? "color:#1e3a8a;font-weight:700;" : "color:#6b7280;";
+        const endHighlight = currentSortBy === "end" ? "color:#b91c1c;font-weight:700;" : "color:#374151;font-weight:600;";
+
         const actionBtn = isDeleted
           ? `<button class="btn btn-primary" style="padding:6px 9px;font-size:12px;" onclick="restoreItem('${item.id}')">♻️ 복구</button>`
           : `<button class="btn btn-danger" style="padding:6px 9px;font-size:12px;" onclick="deleteItem('${item.id}')">🗑️ 삭제</button>`;
@@ -1734,6 +2026,7 @@ ${contextText}
           <!-- 상단 기본 행 -->
           <tr class="main-row ${isFav && !isDeleted ? 'fav-row' : ''}" id="row_${safeId}">
             <td style="text-align:center;white-space:nowrap;">
+              <span style="display:inline-block;min-width:20px;font-size:12px;color:#6b7280;font-weight:600;margin-right:2px;">${idx + 1}</span>
               <input type="checkbox" ${isChecked} style="width:16px;height:16px;cursor:pointer;vertical-align:middle;" onclick="toggleRowCheckbox(event, '${item.id}', ${idx})" />
               <button class="fav-btn ${isFav ? 'active' : ''}" onclick="toggleFavorite('${item.id}')" title="${isFav ? '관심공고 해제' : '관심공고 체크 (목록 최상단 배치)'}">
                 ${isFav ? '⭐' : '☆'}
@@ -1747,8 +2040,9 @@ ${contextText}
               <div>${favBadge}${badges}${statusBadge}${qBadge}</div>
               <a href="${item.url}" target="_blank" class="title-link">${escapeHtml(item.title)}</a>
             </td>
-            <td style="font-size:13px;color:#374151;white-space:nowrap;">
-              ${escapeHtml(item.period || item.reg_date || '-')}
+            <td style="font-size:12.5px;line-height:1.55;white-space:nowrap;">
+              <div style="${regHighlight}">📅 공고일: ${escapeHtml(displayRegDate)}</div>
+              <div style="${endHighlight}">⏰ 마감일: ${escapeHtml(displayEndDate)}</div>
             </td>
             <td style="text-align:center;white-space:nowrap;">
               <button id="sumbtn_${safeId}" class="btn btn-outline" style="padding:6px 9px;font-size:12px;margin-right:2px;" onclick="toggleSummary('${item.id}', '${safeId}')">📄 개요 ▼</button>
@@ -1853,36 +2147,59 @@ ${contextText}
     }
 
     async function updateGitHubFile(path, newContentObj, token, message) {
-      const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}`;
-      const getRes = await fetch(url, {
-        headers: { "Authorization": `Bearer ${token}`, "Accept": "application/vnd.github+json" }
-      });
-      let sha = undefined;
-      let existingObj = {};
-      if (getRes.ok) {
-        const fileData = await getRes.json();
-        sha = fileData.sha;
-        try { existingObj = JSON.parse(base64ToUtf8(fileData.content)); } catch (e) {}
-      }
-      const finalObj = typeof newContentObj === "function" ? newContentObj(existingObj) : newContentObj;
-      const contentStr = JSON.stringify(finalObj, null, 2);
+      const baseUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}`;
+      let lastErr = null;
 
-      const putRes = await fetch(url, {
-        method: "PUT",
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "Accept": "application/vnd.github+json",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          message: message,
-          content: utf8ToBase64(contentStr),
-          sha: sha
-        })
-      });
-      if (!putRes.ok) {
-        throw new Error(`GitHub API 오류 (${putRes.status})`);
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          // cache: "no-store" 및 타임스탬프 파라미터로 브라우저의 60초 sha 캐시로 인한 409 Conflict 원천 차단
+          const getRes = await fetch(`${baseUrl}?t=${Date.now()}`, {
+            cache: "no-store",
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "Accept": "application/vnd.github+json"
+            }
+          });
+          let sha = undefined;
+          let existingObj = {};
+          if (getRes.ok) {
+            const fileData = await getRes.json();
+            sha = fileData.sha;
+            try { existingObj = JSON.parse(base64ToUtf8(fileData.content)); } catch (e) {}
+          }
+          const finalObj = typeof newContentObj === "function" ? newContentObj(existingObj) : newContentObj;
+          const contentStr = JSON.stringify(finalObj, null, 2);
+
+          const putRes = await fetch(baseUrl, {
+            method: "PUT",
+            cache: "no-store",
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "Accept": "application/vnd.github+json",
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              message: message,
+              content: utf8ToBase64(contentStr),
+              sha: sha
+            })
+          });
+          if (putRes.ok) {
+            return;
+          }
+          if (putRes.status === 409 && attempt < 3) {
+            await new Promise(r => setTimeout(r, 400 * attempt));
+            continue;
+          }
+          throw new Error(`GitHub API 오류 (${putRes.status})`);
+        } catch (err) {
+          lastErr = err;
+          if (attempt < 3) {
+            await new Promise(r => setTimeout(r, 400 * attempt));
+          }
+        }
       }
+      throw lastErr || new Error("GitHub 저장 실패");
     }
 
     async function syncToGitHub(silent = false) {
@@ -1891,40 +2208,86 @@ ${contextText}
         openTokenModal();
         return;
       }
+      if (isSyncingToGitHub) {
+        pendingSyncRequest = true;
+        return;
+      }
+      isSyncingToGitHub = true;
+
       try {
         if (!silent) showToast("☁️ GitHub 서버에 변경사항을 저장하는 중...");
+        persistDeletionStateToLocal();
 
-        const storedItems = serverData.items.slice(0, 500);
-        const updatedDataJson = {
-          updated_at: new Date().toISOString().replace("T", " ").substring(0, 19),
-          keywords: serverData.keywords,
-          exclude_keywords: serverData.exclude_keywords,
-          search_days: serverData.search_days,
-          auto_archive_expired: serverData.auto_archive_expired,
-          sites: serverData.sites,
-          custom_sites: serverData.custom_sites,
-          favorite_ids: serverData.favorite_ids,
-          deleted_ids: serverData.deleted_ids,
-          items: storedItems
-        };
-        await updateGitHubFile("docs/data.json", updatedDataJson, token, "chore: sync dashboard data [skip ci]");
+        await updateGitHubFile("docs/data.json", (existingData) => {
+          const restoredSet = new Set([
+            ...(existingData.restored_ids || []),
+            ...Array.from(manualRestoredIds)
+          ]);
+          userDeletedIds.forEach(id => restoredSet.delete(id));
 
-        await updateGitHubFile("config.json", (existingCfg) => {
-          existingCfg.keywords = serverData.keywords;
-          existingCfg.exclude_keywords = serverData.exclude_keywords;
-          existingCfg.search_days = serverData.search_days;
-          existingCfg.auto_archive_expired = serverData.auto_archive_expired;
-          existingCfg.custom_sites = serverData.custom_sites;
-          return existingCfg;
-        }, token, "chore: sync config.json from web dashboard [skip ci]");
+          const mergedDeletedIds = Array.from(new Set([
+            ...(existingData.deleted_ids || []),
+            ...serverData.deleted_ids,
+            ...Array.from(userDeletedIds)
+          ])).filter(id => !restoredSet.has(id));
 
+          const mergedDeletedTitles = Array.from(new Set([
+            ...(existingData.deleted_titles || []),
+            ...Array.from(deletedTitles)
+          ]));
+
+          const itemMap = new Map();
+          (existingData.items || []).forEach(it => { if (it && it.id) itemMap.set(it.id, it); });
+          (serverData.items || []).forEach(it => { if (it && it.id) itemMap.set(it.id, it); });
+          const storedItems = Array.from(itemMap.values()).slice(0, 500);
+
+          serverData.deleted_ids = mergedDeletedIds;
+
+          return {
+            ...existingData,
+            updated_at: new Date().toISOString().replace("T", " ").substring(0, 19),
+            keywords: serverData.keywords,
+            exclude_keywords: serverData.exclude_keywords,
+            search_days: serverData.search_days,
+            auto_archive_expired: serverData.auto_archive_expired,
+            sites: serverData.sites,
+            custom_sites: serverData.custom_sites,
+            favorite_ids: serverData.favorite_ids,
+            deleted_ids: mergedDeletedIds,
+            deleted_titles: mergedDeletedTitles,
+            restored_ids: Array.from(restoredSet),
+            items: storedItems
+          };
+        }, token, "chore: sync dashboard data [skip ci]");
+
+        if (hasConfigChanges) {
+          await updateGitHubFile("config.json", (existingCfg) => {
+            existingCfg.keywords = serverData.keywords;
+            existingCfg.exclude_keywords = serverData.exclude_keywords;
+            existingCfg.search_days = serverData.search_days;
+            existingCfg.auto_archive_expired = serverData.auto_archive_expired;
+            existingCfg.custom_sites = serverData.custom_sites;
+            return existingCfg;
+          }, token, "chore: sync config.json from web dashboard [skip ci]");
+          hasConfigChanges = false;
+        }
+
+        persistDeletionStateToLocal();
         hasUnsavedChanges = false;
         document.getElementById("unsavedBanner").style.display = "none";
         document.getElementById("syncBtn").style.display = "none";
-        showToast("✅ 서버(GitHub)에 삭제 내역, 키워드, 추가 사이트가 완벽히 반영되었습니다!");
+        if (!silent) {
+          showToast("✅ 서버(GitHub)에 삭제 내역 및 설정이 완벽히 반영되었습니다!");
+        }
       } catch (err) {
         console.error(err);
-        showToast("❌ 서버 저장 실패: 토큰 권한을 확인해 주세요.");
+        showToast("❌ 서버 저장 실패: GitHub 토큰 권한(repo)을 확인해 주세요.");
+      } finally {
+        isSyncingToGitHub = false;
+        if (pendingSyncRequest) {
+          pendingSyncRequest = false;
+          syncToGitHub(true);
+        }
       }
     }
 

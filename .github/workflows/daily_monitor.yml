@@ -40,6 +40,7 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
         run: |
+          git pull --rebase origin main || true
           python monitor.py
 
       - name: 확인 완료한 공고 및 서버 DB(seen_posts.json, docs/data.json) 업데이트 저장

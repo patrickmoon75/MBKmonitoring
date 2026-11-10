@@ -647,7 +647,7 @@ def fetch_egbiz(max_pages: int = 3) -> List[Dict]:
             start_dt = row.get("aplyBgngDt") or ""
             end_dt = row.get("aplyEndDt") or ""
             period = f"{start_dt} ~ {end_dt}".strip(" ~")
-            reg_date = row.get("mdfcnDt") or start_dt
+            reg_date = start_dt or row.get("mdfcnDt") or ""
             detail_url = (
                 f"https://www.egbiz.or.kr/sp/supportPrjDtl.do"
                 f"?listUrl=supportPrjCatList&bizCyclId={biz_id}"
@@ -864,6 +864,8 @@ def load_server_db() -> Dict:
         "updated_at": "",
         "items": [],
         "deleted_ids": [],
+        "deleted_titles": [],
+        "restored_ids": [],
         "favorite_ids": []
     }
 
@@ -871,6 +873,21 @@ def load_server_db() -> Dict:
 def save_server_db(db_data: Dict, config: Dict) -> None:
     """누적 공고 목록과 현재 설정을 docs/data.json에 저장합니다."""
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    # 저장 직전 디스크의 최신 deleted_ids / deleted_titles / restored_ids 병합 (동시 수정 손실 방지)
+    if DATA_JSON_PATH.exists():
+        try:
+            with open(DATA_JSON_PATH, "r", encoding="utf-8") as f:
+                latest_disk = json.load(f)
+            disk_restored = set(latest_disk.get("restored_ids", []))
+            cur_restored = set(db_data.get("restored_ids", [])) | disk_restored
+            merged_del = (set(db_data.get("deleted_ids", [])) | set(latest_disk.get("deleted_ids", []))) - cur_restored
+            merged_titles = set(db_data.get("deleted_titles", [])) | set(latest_disk.get("deleted_titles", []))
+            db_data["deleted_ids"] = list(merged_del)
+            db_data["deleted_titles"] = list(merged_titles)
+            db_data["restored_ids"] = list(cur_restored)
+        except Exception:
+            pass
+
     db_data["updated_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     db_data["keywords"] = config.get("keywords", [])
     db_data["exclude_keywords"] = config.get("exclude_keywords", [])
@@ -880,6 +897,10 @@ def save_server_db(db_data: Dict, config: Dict) -> None:
     db_data["custom_sites"] = config.get("custom_sites", [])
     if "favorite_ids" not in db_data:
         db_data["favorite_ids"] = []
+    if "deleted_titles" not in db_data:
+        db_data["deleted_titles"] = []
+    if "restored_ids" not in db_data:
+        db_data["restored_ids"] = []
     with open(DATA_JSON_PATH, "w", encoding="utf-8") as f:
         json.dump(db_data, f, ensure_ascii=False, indent=2)
 
@@ -1196,6 +1217,8 @@ def main():
 
     server_db = load_server_db()
     deleted_ids = set(server_db.get("deleted_ids", []))
+    deleted_titles = set(server_db.get("deleted_titles", []))
+    restored_ids = set(server_db.get("restored_ids", []))
     existing_items_map: Dict[str, Dict] = {}
     expired_auto_moved = 0
 
@@ -1204,14 +1227,19 @@ def main():
         if not item_id:
             continue
         s_date, e_date, r_date = extract_post_dates(item.get("period", ""), item.get("reg_date", ""))
+        if item.get("site") == "경기기업비서(이지비즈)" and s_date:
+            r_date = s_date
+            item["reg_date"] = s_date
         item["start_date"] = s_date
         item["end_date"] = e_date
         item["reg_date_norm"] = r_date
-        if auto_archive_expired and e_date and e_date < today_str:
+        if auto_archive_expired and e_date and e_date < today_str and item_id not in restored_ids:
             item["expired"] = True
             if item_id not in deleted_ids:
                 deleted_ids.add(item_id)
                 expired_auto_moved += 1
+        if item.get("title", "").strip() in deleted_titles and item_id not in restored_ids:
+            deleted_ids.add(item_id)
         existing_items_map[item_id] = item
 
     seen_ids = set() if args.ignore_seen else load_seen_ids()
@@ -1229,6 +1257,9 @@ def main():
             continue
 
         s_date, e_date, r_date = extract_post_dates(post.get("period", ""), post.get("reg_date", ""))
+        if post.get("site") == "경기기업비서(이지비즈)" and s_date:
+            r_date = s_date
+            post["reg_date"] = s_date
         post["start_date"] = s_date
         post["end_date"] = e_date
         post["reg_date_norm"] = r_date
@@ -1238,8 +1269,12 @@ def main():
         if cutoff_date_str and ref_date and ref_date < cutoff_date_str and post["id"] not in existing_items_map:
             continue
 
+        # 사용자가 이미 삭제한 공고 제목과 동일한 경우 자동으로 삭제함 처리
+        if post["title"].strip() in deleted_titles and post["id"] not in restored_ids:
+            deleted_ids.add(post["id"])
+
         # 신청 마감일이 지난 공고는 자동으로 삭제(제외)함으로 이동
-        is_expired = bool(auto_archive_expired and e_date and e_date < today_str)
+        is_expired = bool(auto_archive_expired and e_date and e_date < today_str and post["id"] not in restored_ids)
         if is_expired:
             post["expired"] = True
             if post["id"] not in deleted_ids:
@@ -1310,7 +1345,7 @@ def main():
                     p["support_count"] = "공고문 참조"
                     p["support_amount"] = "공고문 참조"
 
-    # 전체 아이템(활성 + 삭제/만료 보관분 최대 500건) 저장 (관심공고 최상단 정렬 반영)
+    # 전체 아이템(활성 + 삭제/만료 보관분 최대 500건) 저장 (관심공고 최상단 + 공고일 최신순 정렬 반영)
     favorite_ids_list = server_db.get("favorite_ids", [])
     fav_set = set(favorite_ids_list)
     all_stored_items = list(existing_items_map.values())
@@ -1318,12 +1353,15 @@ def main():
         key=lambda x: (
             0 if x.get("id") in fav_set else 1,
             favorite_ids_list.index(x["id"]) if x.get("id") in fav_set else 999999,
+            -(int((x.get("reg_date_norm") or x.get("start_date") or "0000-00-00").replace("-", "")) or 0),
         )
     )
     all_stored_items = all_stored_items[:500]
     active_items_list = [item for item in all_stored_items if item.get("id") not in deleted_ids]
     server_db["items"] = all_stored_items
     server_db["deleted_ids"] = list(deleted_ids)
+    server_db["deleted_titles"] = list(deleted_titles)
+    server_db["restored_ids"] = list(restored_ids)
     server_db["favorite_ids"] = favorite_ids_list
     save_server_db(server_db, config)
     print(
