@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-09T01:47:10.008653",
+  "updated_at": "2026-11-10T04:12:51.799610",
   "seen_ids": [
     "bizinfo_PBLN_000000000127709",
     "bizinfo_PBLN_000000000127721",
@@ -7,6 +7,7 @@
     "bizinfo_PBLN_000000000127731",
     "bizinfo_PBLN_000000000127739",
     "bizinfo_PBLN_000000000127753",
+    "bizinfo_PBLN_000000000127759",
     "egbiz_PD000000057562",
     "egbiz_PD000000057577",
     "egbiz_PD000000057607",
@@ -15,6 +16,8 @@
     "egbiz_PD000000057613",
     "egbiz_PD000000057614",
     "egbiz_PD000000057616",
+    "egbiz_PD000000057625",
+    "egbiz_PD000000057628",
     "kocca_bbs_2012645",
     "kocca_bbs_2012757",
     "kocca_bbs_2012763",
@@ -49,6 +52,11 @@
     "kstartup_179737",
     "kstartup_179740",
     "kstartup_179741",
-    "kstartup_179742"
+    "kstartup_179742",
+    "kstartup_179747",
+    "kstartup_179751",
+    "kstartup_179754",
+    "kstartup_179758",
+    "kstartup_179762"
   ]
 }
