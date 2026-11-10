@@ -951,9 +951,10 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
     """
     이메일 본문 및 로컬 확인용 HTML 리포트를 생성합니다.
     - '📄 개요' 버튼 클릭 시 확장 + '🤖 AI 질문하기' 연동 포함
+    - 공고일/마감일 표시 및 정렬(로컬 리포트 열람 시), 리스트 총 갯수/순번 표시 포함
     """
     rows_html = ""
-    for item in matched_items:
+    for idx, item in enumerate(matched_items, 1):
         badges = " ".join(
             f'<span style="display:inline-block;background:#eef2ff;color:#3730a3;'
             f'padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;margin-right:4px;">'
@@ -965,8 +966,17 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
         ask_url = f"{DASHBOARD_URL}?ask={encoded_id}"
         summary_text = format_summary_html(item.get("summary") or "")
 
+        s_date, e_date, r_date = extract_post_dates(item.get("period", ""), item.get("reg_date", ""))
+        if item.get("site") == "경기기업비서(이지비즈)" and s_date:
+            r_date = s_date
+        reg_disp = r_date or s_date or item.get("collected_date") or "-"
+        end_disp = e_date or (item.get("period") or "상시/별도공지")
+
         rows_html += f"""
-        <tr>
+        <tr class="report-row" data-reg="{reg_disp}" data-end="{e_date or ''}">
+            <td style="padding:12px 8px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;font-weight:700;vertical-align:top;" class="row-num">
+                {idx}
+            </td>
             <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#4b5563;white-space:nowrap;vertical-align:top;">
                 <strong>{item['site']}</strong><br>
                 <span style="font-size:12px;color:#6b7280;">{item['agency']}</span>
@@ -989,8 +999,9 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
                     </div>
                 </details>
             </td>
-            <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#374151;white-space:nowrap;vertical-align:top;">
-                {item['period'] or '-'}
+            <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;font-size:12.5px;color:#374151;white-space:nowrap;vertical-align:top;line-height:1.55;">
+                <div style="color:#1e3a8a;font-weight:700;">📅 공고일: {reg_disp}</div>
+                <div style="color:#b91c1c;font-weight:600;">⏰ 마감일: {end_disp}</div>
             </td>
             <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;text-align:center;white-space:nowrap;vertical-align:top;">
                 <a href="{ask_url}" target="_blank"
@@ -1012,7 +1023,7 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
     if not rows_html:
         rows_html = """
         <tr>
-            <td colspan="4" style="padding:30px;text-align:center;color:#6b7280;font-size:14px;">
+            <td colspan="5" style="padding:30px;text-align:center;color:#6b7280;font-size:14px;">
                 오늘 새로 등록된 키워드 매칭 지원사업이 없습니다.
             </td>
         </tr>
@@ -1026,12 +1037,12 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
 <title>IT/창업 지원사업 모니터링 리포트 ({today_str})</title>
 </head>
 <body style="margin:0;padding:20px;background-color:#f3f4f6;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;">
-    <div style="max-width:980px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+    <div style="max-width:1040px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
         <div style="background:#1e3a8a;color:#ffffff;padding:24px 28px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
             <div>
                 <h2 style="margin:0 0 8px 0;font-size:20px;">🚀 맞춤형 지원사업 데일리 리포트 ({today_str})</h2>
                 <p style="margin:0;font-size:13px;color:#bfdbfe;">
-                    설정 키워드: <strong>{kw_str}</strong> | 신규 매칭: <strong>{len(matched_items)}건</strong>
+                    설정 키워드: <strong>{kw_str}</strong> | 📋 리스트 갯수: <strong>총 {len(matched_items)}건</strong>
                 </p>
             </div>
             <div>
@@ -1041,17 +1052,28 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
                 </a>
             </div>
         </div>
-        <div style="padding:20px 28px;">
+        <div style="padding:14px 28px 0 28px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+            <span style="display:inline-block;background:#eff6ff;color:#1e3a8a;border:1px solid #bfdbfe;padding:6px 12px;border-radius:8px;font-size:13px;font-weight:700;">
+                📋 리스트: 총 {len(matched_items)}건
+            </span>
+            <div style="display:inline-flex;align-items:center;gap:6px;background:#f8fafc;border:1px solid #cbd5e1;padding:4px 8px;border-radius:8px;font-size:12.5px;">
+                <strong style="color:#374151;margin:0 4px;">↕️ 정렬:</strong>
+                <button id="rSortReg" onclick="sortReportRows('reg')" style="padding:5px 10px;border-radius:6px;font-size:12px;font-weight:700;border:none;background:#1e3a8a;color:#fff;cursor:pointer;">📅 공고일순 ↓</button>
+                <button id="rSortEnd" onclick="sortReportRows('end')" style="padding:5px 10px;border-radius:6px;font-size:12px;font-weight:600;border:none;background:transparent;color:#4b5563;cursor:pointer;">⏰ 마감일순 ↑</button>
+            </div>
+        </div>
+        <div style="padding:14px 28px 20px 28px;">
             <table style="width:100%;border-collapse:collapse;">
                 <thead>
                     <tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb;text-align:left;font-size:13px;color:#374151;">
+                        <th style="padding:10px 8px;width:44px;text-align:center;">No.</th>
                         <th style="padding:10px;">출처 / 기관</th>
                         <th style="padding:10px;">지원사업 공고명 ('📄 개요' 클릭 시 내용 확장)</th>
-                        <th style="padding:10px;">접수기간</th>
+                        <th style="padding:10px;">공고일 / 마감일</th>
                         <th style="padding:10px;text-align:center;">AI 질문 / 원문 / 삭제</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="reportTableBody">
                     {rows_html}
                 </tbody>
             </table>
@@ -1061,6 +1083,56 @@ def build_html_report(matched_items: List[Dict], keywords: List[str], today_str:
             • <strong>[🗑️ 삭제]</strong> 버튼을 누르면 서버 보관함에서 삭제되며, 검색 사이트 및 키워드 추가는 <a href="{DASHBOARD_URL}" target="_blank" style="color:#2563eb;font-weight:600;">웹 대시보드({DASHBOARD_URL})</a>에서 관리할 수 있습니다.
         </div>
     </div>
+    <script>
+      let rSortBy = 'reg';
+      let rSortDir = 'desc';
+      function sortReportRows(by) {{
+        if (rSortBy === by) {{
+          rSortDir = rSortDir === 'desc' ? 'asc' : 'desc';
+        }} else {{
+          rSortBy = by;
+          rSortDir = by === 'end' ? 'asc' : 'desc';
+        }}
+        const tbody = document.getElementById('reportTableBody');
+        if (!tbody) return;
+        const rows = Array.from(tbody.querySelectorAll('tr.report-row'));
+        rows.sort((a, b) => {{
+          const aReg = a.getAttribute('data-reg') || '';
+          const bReg = b.getAttribute('data-reg') || '';
+          const aEnd = a.getAttribute('data-end') || '';
+          const bEnd = b.getAttribute('data-end') || '';
+          if (rSortBy === 'end') {{
+            if (Boolean(aEnd) !== Boolean(bEnd)) return aEnd ? -1 : 1;
+            if (aEnd !== bEnd) return rSortDir === 'asc' ? aEnd.localeCompare(bEnd) : bEnd.localeCompare(aEnd);
+            return bReg.localeCompare(aReg);
+          }} else {{
+            if (Boolean(aReg) !== Boolean(bReg)) return aReg ? -1 : 1;
+            if (aReg !== bReg) return rSortDir === 'asc' ? aReg.localeCompare(bReg) : bReg.localeCompare(aReg);
+            return aEnd.localeCompare(bEnd);
+          }}
+        }});
+        rows.forEach((tr, idx) => {{
+          const numCell = tr.querySelector('.row-num');
+          if (numCell) numCell.textContent = idx + 1;
+          tbody.appendChild(tr);
+        }});
+        const btnReg = document.getElementById('rSortReg');
+        const btnEnd = document.getElementById('rSortEnd');
+        if (btnReg && btnEnd) {{
+          if (rSortBy === 'reg') {{
+            btnReg.style.background = '#1e3a8a'; btnReg.style.color = '#fff';
+            btnReg.textContent = '📅 공고일순 ' + (rSortDir === 'desc' ? '↓' : '↑');
+            btnEnd.style.background = 'transparent'; btnEnd.style.color = '#4b5563';
+            btnEnd.textContent = '⏰ 마감일순 ↕';
+          }} else {{
+            btnEnd.style.background = '#1e3a8a'; btnEnd.style.color = '#fff';
+            btnEnd.textContent = '⏰ 마감일순 ' + (rSortDir === 'asc' ? '↑' : '↓');
+            btnReg.style.background = 'transparent'; btnReg.style.color = '#4b5563';
+            btnReg.textContent = '📅 공고일순 ↕';
+          }}
+        }}
+      }}
+    </script>
 </body>
 </html>
 """
