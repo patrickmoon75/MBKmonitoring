@@ -761,15 +761,68 @@ def fetch_kocca(max_pages: int = 3) -> List[Dict]:
     return items
 
 
+def _discover_board_urls(soup: BeautifulSoup, list_url: str) -> List[str]:
+    """메인 홈페이지 URL이 입력된 경우 페이지 내 사업공고/공지사항 게시판 링크를 자동 탐색합니다."""
+    high_priority: List[str] = []
+    low_priority: List[str] = []
+    seen = set()
+
+    for a_tag in soup.select("a[href]"):
+        href = (a_tag.get("href") or "").strip()
+        if not href or href.startswith(("javascript:", "#", "mailto:", "tel:")):
+            continue
+        full_url = urllib.parse.urljoin(list_url, href)
+        if urllib.parse.urlparse(full_url).netloc != urllib.parse.urlparse(list_url).netloc:
+            continue
+        if full_url in seen or full_url == list_url:
+            continue
+
+        txt = " ".join(a_tag.get_text(" ", strip=True).split())
+        href_lower = href.lower()
+
+        is_high = any(k in txt for k in ["사업공고", "모집공고", "지원사업", "입찰공고"]) or any(
+            k in href_lower for k in ["business/list", "biz/list", "announce/list", "sub0201"]
+        )
+        is_low = any(k in txt for k in ["공지사항", "공고/공지", "알림마당", "새소식"]) or any(
+            k in href_lower for k in ["notice/list", "bbs/list", "board/list"]
+        )
+
+        if is_high:
+            seen.add(full_url)
+            high_priority.append(full_url)
+        elif is_low:
+            seen.add(full_url)
+            low_priority.append(full_url)
+
+    discovered = (high_priority + low_priority)[:2]
+    return discovered
+
+
+def _select_board_rows(soup: BeautifulSoup, row_sel: str = "") -> List:
+    if row_sel:
+        return soup.select(row_sel)
+    for candidate in [
+        "table tbody tr",
+        ".board_list li",
+        ".bbs_list li",
+        ".list_wrap li",
+        "ul.board li",
+        "table tr",
+    ]:
+        found = soup.select(candidate)
+        if len(found) >= 2:
+            return found
+    return []
+
+
 def fetch_custom_site(site_cfg: Dict) -> List[Dict]:
-    """사용자가 추가한 커스텀 검색 사이트 수집."""
+    """사용자가 추가한 커스텀 검색 사이트 수집 (메인 URL 입력 시 게시판 자동 탐색 지원)."""
     items = []
     name = site_cfg.get("name", "추가 사이트")
     list_url = site_cfg.get("list_url") or site_cfg.get("url", "")
     if not list_url:
         return items
 
-    base_url = site_cfg.get("base_url") or list_url
     row_sel = site_cfg.get("row_selector", "")
     title_sel = site_cfg.get("title_selector", "")
     date_sel = site_cfg.get("date_selector", "")
@@ -777,74 +830,101 @@ def fetch_custom_site(site_cfg: Dict) -> List[Dict]:
     try:
         html = fetch_text(list_url)
         soup = BeautifulSoup(html, "html.parser")
+        rows = _select_board_rows(soup, row_sel)
 
-        rows = []
-        if row_sel:
-            rows = soup.select(row_sel)
+        parsed_path = urllib.parse.urlparse(list_url).path.lower()
+        is_likely_main = parsed_path in ("", "/", "/index.html", "/main.html") or parsed_path.endswith(
+            ("/main.html", "/index.do", "/main.do", "/index.jsp")
+        )
+
+        target_boards: List[Tuple[str, Optional[BeautifulSoup]]] = []
+        if is_likely_main or len(rows) < 2:
+            discovered_urls = _discover_board_urls(soup, list_url)
+            if discovered_urls:
+                for d_url in discovered_urls:
+                    target_boards.append((d_url, None))
+            else:
+                target_boards.append((list_url, soup))
         else:
-            for candidate in [
-                "table tbody tr",
-                ".board_list li",
-                ".bbs_list li",
-                ".list_wrap li",
-                "ul.board li",
-                "table tr",
-            ]:
-                found = soup.select(candidate)
-                if len(found) >= 2:
-                    rows = found
-                    break
+            target_boards.append((list_url, soup))
 
         seen_titles = set()
-        for row in rows:
-            a_el = None
-            if title_sel:
-                a_el = row.select_one(title_sel)
-            else:
-                links = row.select("a")
-                best_len = 0
-                for link in links:
-                    t = link.get_text(strip=True)
-                    if len(t) > best_len and len(t) >= 8:
-                        best_len = len(t)
-                        a_el = link
-
-            if not a_el:
+        for board_url, cached_soup in target_boards:
+            try:
+                b_soup = cached_soup if cached_soup is not None else BeautifulSoup(fetch_text(board_url), "html.parser")
+            except Exception:
                 continue
 
-            title = " ".join(a_el.get_text(" ", strip=True).split())
-            if not title or title in seen_titles:
-                continue
-            seen_titles.add(title)
+            b_rows = _select_board_rows(b_soup, row_sel)
+            for row in b_rows:
+                a_el = None
+                if title_sel:
+                    a_el = row.select_one(title_sel)
+                else:
+                    links = row.select("a")
+                    best_len = 0
+                    for link in links:
+                        t = link.get_text(strip=True)
+                        if len(t) > best_len and len(t) >= 8:
+                            best_len = len(t)
+                            a_el = link
 
-            href = a_el.get("href", "")
-            if href and not href.startswith("javascript:"):
-                detail_url = urllib.parse.urljoin(base_url, href)
-            else:
-                detail_url = list_url
+                if not a_el:
+                    continue
 
-            reg_date = "-"
-            if date_sel:
-                d_el = row.select_one(date_sel)
-                if d_el:
-                    reg_date = d_el.get_text(strip=True)
-            else:
+                title = " ".join(a_el.get_text(" ", strip=True).split())
+                if not title or title in seen_titles:
+                    continue
+                seen_titles.add(title)
+
+                href = (a_el.get("href") or "").strip()
+                if href and not href.startswith("javascript:"):
+                    detail_url = urllib.parse.urljoin(board_url, href)
+                else:
+                    detail_url = board_url
+
                 row_text = row.get_text(" ", strip=True)
-                m_date = re.search(r"(20\d{2}[-./]\d{2}[-./]\d{2})", row_text)
-                if m_date:
-                    reg_date = m_date.group(1)
+                reg_date = "-"
+                if date_sel:
+                    d_el = row.select_one(date_sel)
+                    if d_el:
+                        reg_date = d_el.get_text(strip=True)
+                else:
+                    m_date = re.search(r"(20\d{2})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})", row_text)
+                    if m_date:
+                        reg_date = f"{int(m_date.group(1)):04d}-{int(m_date.group(2)):02d}-{int(m_date.group(3)):02d}"
 
-            safe_id = re.sub(r"[^A-Za-z0-9가-힣_]", "", title)[:30]
-            post_id = f"custom_{name}_{safe_id}"
-            items.append({
-                "id": post_id,
-                "site": name,
-                "title": title,
-                "agency": name,
-                "period": reg_date,
-                "reg_date": reg_date,
-                "url": detail_url,
-            })
+                period_str = reg_date
+                m_period = re.search(
+                    r"(20\d{2}\s*[-./]\s*\d{1,2}\s*[-./]\s*\d{1,2}\s*~\s*20\d{2}\s*[-./]\s*\d{1,2}\s*[-./]\s*\d{1,2})",
+                    row_text,
+                )
+                if m_period:
+                    period_str = m_period.group(1)
+
+                agency_label = name
+                tds = row.select("td")
+                if len(tds) >= 3:
+                    cat_candidate = " ".join(tds[1].get_text(" ", strip=True).split())
+                    if (
+                        cat_candidate
+                        and len(cat_candidate) <= 24
+                        and cat_candidate != title
+                        and not re.match(r"^(?:\d+|공지|알림|20\d{2}[-./])", cat_candidate)
+                    ):
+                        agency_label = f"{name} ({cat_candidate})"
+
+                safe_id = re.sub(r"[^A-Za-z0-9가-힣_]", "", title)[:30]
+                post_id = f"custom_{name}_{safe_id}"
+                items.append({
+                    "id": post_id,
+                    "site": name,
+                    "title": title,
+                    "agency": agency_label,
+                    "period": period_str,
+                    "reg_date": reg_date,
+                    "url": detail_url,
+                })
     except Exception as e:
         print(f"[경고] 커스텀 사이트({name}) 수집 실패: {e}")
 
@@ -1323,10 +1403,14 @@ def main():
     posts_needing_summary: List[Dict] = []
 
     for post in all_posts:
-        target_text = post["title"]
+        target_text = f"{post['title']} {post.get('agency', '')}"
         matched_kws = match_keywords(target_text, keywords, exclude_keywords)
         if not matched_kws:
             continue
+
+        prev_item = existing_items_map.get(post["id"], {})
+        if not post.get("end_date") and prev_item.get("end_date"):
+            post["period"] = prev_item.get("period", post.get("period", ""))
 
         s_date, e_date, r_date = extract_post_dates(post.get("period", ""), post.get("reg_date", ""))
         if post.get("site") == "경기기업비서(이지비즈)" and s_date:
@@ -1353,7 +1437,6 @@ def main():
                 deleted_ids.add(post["id"])
                 expired_auto_moved += 1
 
-        prev_item = existing_items_map.get(post["id"], {})
         post["matched_keywords"] = matched_kws
         post["collected_date"] = prev_item.get("collected_date", today_str)
 
@@ -1410,6 +1493,24 @@ def main():
                     p["project_content"] = info.get("project_content", "")
                     p["support_count"] = info.get("support_count", "공고문 참조")
                     p["support_amount"] = info.get("support_amount", "공고문 참조")
+                    if not p.get("end_date") and detail_txt:
+                        m_per = re.search(
+                            r"(?:기간|접수기간|신청기간|공고기간|모집기간)\s*[:：]?\s*(20\d{2}\s*[-./]\s*\d{1,2}\s*[-./]\s*\d{1,2}[^~\n]{0,20}~\s*20\d{2}\s*[-./]\s*\d{1,2}\s*[-./]\s*\d{1,2})",
+                            detail_txt,
+                        )
+                        if m_per:
+                            p["period"] = m_per.group(1).strip()
+                            s_d, e_d, r_d = extract_post_dates(p["period"], p.get("reg_date", ""))
+                            if s_d:
+                                p["start_date"] = s_d
+                            if e_d:
+                                p["end_date"] = e_d
+                                if auto_archive_expired and e_d < today_str and p["id"] not in restored_ids:
+                                    p["expired"] = True
+                                    if p["id"] not in deleted_ids:
+                                        deleted_ids.add(p["id"])
+                                        expired_auto_moved += 1
+                                    matched_items[:] = [m for m in matched_items if m["id"] != p["id"]]
                 except Exception:
                     p["summary"] = "상세 내용은 [공고 보기]를 눌러 확인해 주세요."
                     p["detail_text"] = p["summary"]

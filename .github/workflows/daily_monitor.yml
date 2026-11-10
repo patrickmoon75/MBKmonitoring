@@ -9,7 +9,12 @@ on:
     paths:
       - 'monitor.py'
       - 'config.json'
-  workflow_dispatch: # GitHub 웹페이지에서 언제든 수동 실행 가능
+  workflow_dispatch: # GitHub 웹페이지 및 대시보드에서 언제든 즉시 실행 가능
+    inputs:
+      dry_run:
+        description: '이메일 발송 없이 대시보드 DB만 즉시 갱신 여부'
+        required: false
+        default: 'true'
 
 permissions:
   contents: write
@@ -41,7 +46,11 @@ jobs:
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
         run: |
           git pull --rebase origin main || true
-          python monitor.py
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            python monitor.py --dry-run
+          else
+            python monitor.py
+          fi
 
       - name: 확인 완료한 공고 및 서버 DB(seen_posts.json, docs/data.json) 업데이트 저장
         run: |

@@ -608,6 +608,9 @@
         <button class="btn btn-success" id="syncBtn" onclick="syncToGitHub()" style="display:none;">
           ☁️ 서버에 변경사항 즉시 반영
         </button>
+        <button class="btn btn-white" id="headerRefreshBtn" onclick="triggerImmediateDataRefresh('전체 사이트')" title="등록된 모든 검색 사이트에서 최신 공고를 즉시 수집하여 갱신합니다">
+          🔄 지금 즉시 자료갱신
+        </button>
         <button class="btn btn-white" onclick="openAiModal()">
           🤖 AI 질문(Gemini 키) 설정
         </button>
@@ -637,14 +640,20 @@
       <div class="panel">
         <div class="panel-title">
           <span>🌐 모니터링 검색 사이트 관리</span>
-          <span style="font-size:12px;color:var(--muted);font-weight:400;">원하는 기관 게시판 URL 추가 가능</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:12px;color:var(--muted);font-weight:400;">사이트 추가 시 즉시 자료갱신 가능</span>
+            <button class="btn btn-success" id="refreshNowBtn" style="padding:4px 10px;font-size:12px;" onclick="triggerImmediateDataRefresh('수동 자료갱신')">
+              🔄 지금 즉시 자료갱신
+            </button>
+          </div>
         </div>
         <div class="kw-list" id="siteContainer" style="margin-bottom:10px;"></div>
         <div style="padding-top:10px;border-top:1px dashed var(--border);display:flex;flex-wrap:wrap;gap:6px;">
-          <input type="text" id="newSiteName" class="kw-input" style="width:135px;" placeholder="기관명 (예: NIPA)" />
-          <input type="url" id="newSiteUrl" class="kw-input" style="flex:1;min-width:180px;" placeholder="게시판 주소 (https://...)" onkeydown="if(event.key==='Enter') addCustomSite()" />
-          <button class="btn btn-primary" style="padding:6px 12px;font-size:12px;" onclick="addCustomSite()">+ 사이트 추가</button>
+          <input type="text" id="newSiteName" class="kw-input" style="width:135px;" placeholder="기관명 (예: UIPA)" />
+          <input type="url" id="newSiteUrl" class="kw-input" style="flex:1;min-width:180px;" placeholder="게시판 또는 홈페이지 주소 (https://...)" onkeydown="if(event.key==='Enter') addCustomSite()" />
+          <button class="btn btn-primary" style="padding:6px 12px;font-size:12px;" onclick="addCustomSite()">+ 사이트 추가 및 갱신</button>
         </div>
+        <div id="refreshStatusBox" style="display:none;margin-top:10px;padding:9px 12px;border-radius:8px;font-size:12.5px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;"></div>
       </div>
     </div>
 
@@ -752,7 +761,7 @@
         웹에서 삭제한 공고, 추가한 키워드 및 검색 사이트를 GitHub 서버 파일(<code>data.json</code>, <code>config.json</code>)에 직접 저장하려면 GitHub Personal Access Token(Classic <code>repo</code> 권한)을 1회 입력해 주세요.
       </p>
       <div style="margin-bottom:12px;">
-        <a href="https://github.com/settings/tokens/new?description=MBKmonitoring-Dashboard&scopes=repo" target="_blank" style="font-size:12px;color:#2563eb;font-weight:600;">
+        <a href="https://github.com/settings/tokens/new?description=MBKmonitoring-Dashboard&scopes=repo,workflow" target="_blank" style="font-size:12px;color:#2563eb;font-weight:600;">
           👉 여기를 눌러 GitHub 토큰 10초 만에 발급받기 (하단 Generate token 클릭)
         </a>
       </div>
@@ -1235,7 +1244,7 @@
         console.warn("data.json 로드 실패:", e);
       }
 
-      // GitHub 토큰이 설정된 경우 GitHub Pages CDN 지연(최대 5~10분)을 우회하여 GitHub API에서 최신 삭제/관심 목록 즉시 병합
+      // GitHub 토큰이 설정된 경우 GitHub Pages CDN 지연(최대 5~10분)을 우회하여 GitHub API에서 최신 목록 즉시 병합
       const ghToken = localStorage.getItem("mbk_github_token");
       if (ghToken) {
         try {
@@ -1248,6 +1257,18 @@
             const apiFile = await apiRes.json();
             if (apiFile && apiFile.content) {
               const apiJson = JSON.parse(base64ToUtf8(apiFile.content));
+              if (apiJson.updated_at && (!serverData.updated_at || apiJson.updated_at >= serverData.updated_at)) {
+                serverData.updated_at = apiJson.updated_at;
+              }
+              if (Array.isArray(apiJson.items) && apiJson.items.length > 0) {
+                const mergedMap = new Map();
+                (serverData.items || []).forEach(it => { if (it && it.id) mergedMap.set(it.id, it); });
+                apiJson.items.forEach(it => { if (it && it.id) mergedMap.set(it.id, it); });
+                serverData.items = Array.from(mergedMap.values());
+              }
+              if (Array.isArray(apiJson.custom_sites) && apiJson.custom_sites.length >= (serverData.custom_sites || []).length) {
+                serverData.custom_sites = apiJson.custom_sites.filter(s => s.enabled !== false);
+              }
               (apiJson.deleted_ids || []).forEach(id => serverDeletedIdsFromJson.add(id));
               (apiJson.deleted_titles || []).forEach(t => deletedTitles.add(t));
               (apiJson.restored_ids || []).forEach(id => manualRestoredIds.add(id));
@@ -1374,6 +1395,23 @@
       setTabHtml("tab_Egbiz", `경기기업비서 (${egbizCount})`);
       setTabHtml("tab_Kocca", `한국콘텐츠진흥원 (${koccaCount})`);
       setTabHtml("deletedTabBtn", `🗑️ 삭제(제외)함 (${delItemsCount})`);
+
+      // 추가된 커스텀 검색 사이트 탭 동적 렌더링
+      const tabsContainer = document.getElementById("siteTabs");
+      const deletedTabEl = document.getElementById("deletedTabBtn");
+      if (tabsContainer && deletedTabEl) {
+        tabsContainer.querySelectorAll(".custom-site-tab").forEach(el => el.remove());
+        (serverData.custom_sites || []).forEach(s => {
+          if (s.enabled === false || !s.name) return;
+          const cnt = activeItems.filter(i => i.site === s.name).length;
+          const btn = document.createElement("button");
+          btn.className = "tab custom-site-tab" + (currentSiteFilter === s.name ? " active" : "");
+          btn.setAttribute("data-site", s.name);
+          btn.textContent = `🌐 ${s.name} (${cnt})`;
+          btn.onclick = () => setSiteFilter(s.name);
+          tabsContainer.insertBefore(btn, deletedTabEl);
+        });
+      }
     }
 
     function renderKeywords() {
@@ -1436,7 +1474,7 @@
       });
     }
 
-    function addCustomSite() {
+    async function addCustomSite() {
       const nameInp = document.getElementById("newSiteName");
       const urlInp = document.getElementById("newSiteUrl");
       const name = nameInp.value.trim();
@@ -1454,27 +1492,216 @@
       let originUrl = url;
       try { originUrl = new URL(url).origin; } catch (e) {}
 
-      serverData.custom_sites.push({
-        enabled: true,
-        name: name,
-        list_url: url,
-        base_url: originUrl
-      });
+      // 이미 동일 이름 사이트가 있으면 URL 업데이트, 없으면 추가
+      const existingIdx = (serverData.custom_sites || []).findIndex(s => s.name === name);
+      if (existingIdx !== -1) {
+        serverData.custom_sites[existingIdx].list_url = url;
+        serverData.custom_sites[existingIdx].base_url = originUrl;
+        serverData.custom_sites[existingIdx].enabled = true;
+      } else {
+        serverData.custom_sites.push({
+          enabled: true,
+          name: name,
+          list_url: url,
+          base_url: originUrl
+        });
+      }
 
       nameInp.value = "";
       urlInp.value = "";
       markChanged(true);
       renderSites();
-      showToast(`🌐 '${name}' 사이트가 모니터링 목록에 추가되었습니다!`);
-      scheduleGitHubSync(true, true);
+      updateHeaderStatus();
+      showToast(`🌐 '${name}' 사이트가 추가되었습니다! 즉시 자료갱신을 실행합니다.`);
+
+      // 사이트 추가 직후 자동으로 서버 저장 및 즉시 자료갱신 실행
+      await triggerImmediateDataRefresh(name);
     }
 
     function removeCustomSite(idx) {
       const removed = serverData.custom_sites.splice(idx, 1);
+      const removedName = removed[0]?.name || "사이트";
+      if (currentSiteFilter === removedName) {
+        currentSiteFilter = "ALL";
+      }
       markChanged(true);
       renderSites();
-      showToast(`'${removed[0]?.name || '사이트'}'가 목록에서 제거되었습니다.`);
+      updateHeaderStatus();
+      renderTable();
+      showToast(`'${removedName}'가 목록에서 제거되었습니다.`);
       scheduleGitHubSync(true, true);
+    }
+
+    let isRefreshingData = false;
+    async function triggerImmediateDataRefresh(reasonLabel = "수동 갱신") {
+      const token = localStorage.getItem("mbk_github_token");
+      if (!token) {
+        openTokenModal();
+        showToast("🔑 즉시 자료갱신을 실행하려면 먼저 GitHub 연동 토큰을 등록해 주세요.");
+        return;
+      }
+      if (isRefreshingData) {
+        showToast("⏳ 이미 자료갱신이 진행 중입니다. 잠시만 기다려 주세요.");
+        return;
+      }
+      isRefreshingData = true;
+
+      const statusBox = document.getElementById("refreshStatusBox");
+      const refreshBtn = document.getElementById("refreshNowBtn");
+      const headerBtn = document.getElementById("headerRefreshBtn");
+      const setRefreshUi = (html, bg = "#eff6ff", border = "#bfdbfe", color = "#1e40af") => {
+        if (statusBox) {
+          statusBox.style.display = "flex";
+          statusBox.style.background = bg;
+          statusBox.style.borderColor = border;
+          statusBox.style.color = color;
+          statusBox.innerHTML = html;
+        }
+      };
+
+      if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = "⏳ 자료갱신 진행 중...";
+      }
+      if (headerBtn) {
+        headerBtn.disabled = true;
+        headerBtn.innerHTML = "⏳ 자료갱신 진행 중...";
+      }
+
+      try {
+        // 1. 대기 중인 디바운스 타이머 취소 후 즉시 GitHub 서버에 설정(config.json, data.json) 저장 완료 대기
+        if (syncDebounceTimer) {
+          clearTimeout(syncDebounceTimer);
+          syncDebounceTimer = null;
+        }
+        while (isSyncingToGitHub) {
+          await new Promise(r => setTimeout(r, 250));
+        }
+        setRefreshUi(`<span>☁️ <strong>[${escapeHtml(reasonLabel)}]</strong> 변경된 사이트/키워드 설정을 서버에 먼저 저장하는 중...</span>`);
+        await syncToGitHub(true);
+
+        // 2. GitHub Actions 워크플로우(daily_monitor.yml) 즉시 실행 요청
+        setRefreshUi(`<span>🚀 <strong>[${escapeHtml(reasonLabel)}]</strong> 서버에 즉시 자료갱신(공고 수집) 명령을 전송하는 중...</span>`);
+        const dispatchUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/daily_monitor.yml/dispatches`;
+        const dispatchStartedAt = Date.now() - 5000;
+
+        let dispRes = await fetch(dispatchUrl, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ ref: "main", inputs: { dry_run: "true" } })
+        });
+
+        // 만약 워크플로우 inputs가 아직 반영되지 않아 422가 반환되면 기본 ref만 전달하여 재시도
+        if (dispRes.status === 422) {
+          dispRes = await fetch(dispatchUrl, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "Accept": "application/vnd.github+json",
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ ref: "main" })
+          });
+        }
+
+        if (!dispRes.ok) {
+          const actionsPageUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/actions/workflows/daily_monitor.yml`;
+          if (dispRes.status === 403) {
+            const newTokenUrl = "https://github.com/settings/tokens/new?description=MBKmonitoring-Dashboard&scopes=repo,workflow";
+            setRefreshUi(
+              `<span>⚠️ 설정 저장은 완료되었으나, 자동 실행을 위해 토큰의 <code>workflow</code> 권한이 필요하거나 수동 실행이 필요합니다.</span>
+               <div style="display:flex;gap:6px;">
+                 <a href="${actionsPageUrl}" target="_blank" class="btn btn-primary" style="padding:4px 10px;font-size:12px;">👉 GitHub Actions에서 Run workflow 클릭 ↗</a>
+                 <a href="${newTokenUrl}" target="_blank" class="btn btn-outline" style="padding:4px 10px;font-size:12px;">🔑 권한 포함 토큰 재발급</a>
+               </div>`,
+              "#fffbeb", "#fde68a", "#92400e"
+            );
+            return;
+          }
+          throw new Error(`워크플로우 호출 실패 (HTTP ${dispRes.status})`);
+        }
+
+        showToast("🚀 즉시 자료갱신이 시작되었습니다! 완료되면 리스트가 자동으로 새로고침됩니다.");
+
+        // 3. GitHub Actions 실행 상태 실시간 폴링 및 완료 시 자동 데이터 리로드
+        const runsUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/daily_monitor.yml/runs?per_page=5`;
+        let completed = false;
+        const maxWaitSec = 160;
+        const startPollTime = Date.now();
+
+        while ((Date.now() - startPollTime) / 1000 < maxWaitSec) {
+          const elapsedSec = Math.round((Date.now() - startPollTime) / 1000);
+          setRefreshUi(
+            `<span>🔄 <strong>[${escapeHtml(reasonLabel)}]</strong> 각 기관 사이트에서 최신 공고 및 AI 개요를 수집하고 있습니다... (경과: ${elapsedSec}초 / 약 40~60초 소요)</span>
+             <a href="https://github.com/${REPO_OWNER}/${REPO_NAME}/actions" target="_blank" style="color:#1d4ed8;font-weight:600;text-decoration:underline;font-size:12px;">실행 로그 보기 ↗</a>`
+          );
+
+          await new Promise(r => setTimeout(r, 4500));
+
+          try {
+            const runRes = await fetch(`${runsUrl}&t=${Date.now()}`, {
+              cache: "no-store",
+              headers: {
+                "Authorization": `Bearer ${token}`,
+                "Accept": "application/vnd.github+json"
+              }
+            });
+            if (runRes.ok) {
+              const runData = await runRes.json();
+              const runs = runData.workflow_runs || [];
+              const recentRun = runs.find(r => new Date(r.created_at).getTime() >= dispatchStartedAt);
+              if (recentRun) {
+                if (recentRun.status === "completed") {
+                  completed = (recentRun.conclusion === "success");
+                  break;
+                }
+              }
+            }
+          } catch (pollErr) {
+            console.warn("폴링 확인 오류:", pollErr);
+          }
+        }
+
+        // 4. 수집 완료 후 최신 데이터(docs/data.json) 즉시 다시 로드 및 테이블 갱신
+        await loadData();
+
+        if (completed) {
+          setRefreshUi(
+            `<span>✅ <strong>[${escapeHtml(reasonLabel)}]</strong> 자료갱신이 완료되어 최신 공고 리스트가 대시보드에 즉시 반영되었습니다!</span>`,
+            "#ecfdf5", "#a7f3d0", "#065f46"
+          );
+          showToast("✅ 자료갱신 완료! 최신 공고 리스트가 업데이트되었습니다.");
+          setTimeout(() => {
+            if (statusBox && !isRefreshingData) statusBox.style.display = "none";
+          }, 12000);
+        } else {
+          setRefreshUi(
+            `<span>ℹ️ <strong>[${escapeHtml(reasonLabel)}]</strong> 백그라운드 수집이 계속 진행 중이거나 완료되었습니다. <button class="btn btn-outline" style="padding:3px 8px;font-size:11.5px;margin-left:6px;" onclick="loadData()">🔄 목록 새로 불러오기</button></span>`,
+            "#eff6ff", "#bfdbfe", "#1e40af"
+          );
+        }
+      } catch (err) {
+        console.error(err);
+        setRefreshUi(
+          `<span>❌ 자료갱신 요청 중 오류가 발생했습니다: ${escapeHtml(err.message || String(err))}</span>`,
+          "#fef2f2", "#fecaca", "#991b1b"
+        );
+        showToast("❌ 즉시 자료갱신 요청에 실패했습니다.");
+      } finally {
+        isRefreshingData = false;
+        if (refreshBtn) {
+          refreshBtn.disabled = false;
+          refreshBtn.innerHTML = "🔄 지금 즉시 자료갱신";
+        }
+        if (headerBtn) {
+          headerBtn.disabled = false;
+          headerBtn.innerHTML = "🔄 지금 즉시 자료갱신";
+        }
+      }
     }
 
     function addKeyword() {
@@ -1526,6 +1753,11 @@
       selectedIds.clear();
       lastCheckedIndex = null;
       document.querySelectorAll("#siteTabs .tab").forEach(btn => {
+        const customSiteAttr = btn.getAttribute("data-site");
+        if (customSiteAttr) {
+          btn.classList.toggle("active", customSiteAttr === site);
+          return;
+        }
         const matchLabel = site === "ALL"
           ? "전체 보기"
           : site === "FAV"
