@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-10 06:26:41",
+  "updated_at": "2026-11-10 06:27:23",
   "items": [
     {
       "id": "kstartup_179737",
@@ -1342,7 +1342,14 @@
       "url": "https://www.kocca.kr/kocca/pims/list.do?menuNo=204104"
     }
   },
-  "custom_sites": [],
+  "custom_sites": [
+    {
+      "enabled": true,
+      "name": "UIPA",
+      "list_url": "https://www.uipa.or.kr/webuser/page/main.html",
+      "base_url": "https://www.uipa.or.kr"
+    }
+  ],
   "last_email_status": "이메일 환경변수(SMTP_USER, SMTP_PASS, RECIPIENT_EMAIL) 미설정",
   "search_days": 0,
   "auto_archive_expired": true,
