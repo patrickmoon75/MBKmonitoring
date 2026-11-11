@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-11 05:53:33",
+  "updated_at": "2026-11-11 05:53:47",
   "items": [
     {
       "id": "bizinfo_PBLN_000000000127797",
@@ -1989,6 +1989,7 @@
   "search_days": 0,
   "auto_archive_expired": true,
   "favorite_ids": [
+    "egbiz_PD000000057641",
     "egbiz_PD000000057625",
     "kstartup_179680",
     "egbiz_PD000000057640",
