@@ -757,12 +757,16 @@
   <div class="modal-backdrop" id="tokenModal">
     <div class="modal">
       <h3 style="margin:0 0 10px 0;font-size:17px;">🔑 GitHub 서버 동기화 토큰 설정</h3>
-      <p style="font-size:13px;color:#4b5563;line-height:1.5;margin-bottom:14px;">
-        웹에서 삭제한 공고, 추가한 키워드 및 검색 사이트를 GitHub 서버 파일(<code>data.json</code>, <code>config.json</code>)에 직접 저장하려면 GitHub Personal Access Token(Classic <code>repo</code> 권한)을 1회 입력해 주세요.
+      <div id="tokenModalAlert" style="display:none;margin-bottom:12px;padding:10px 12px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:12.5px;line-height:1.5;font-weight:600;"></div>
+      <p style="font-size:13px;color:#4b5563;line-height:1.5;margin-bottom:10px;">
+        웹에서 삭제한 공고, 추가한 키워드 및 검색 사이트를 GitHub 서버 파일(<code>data.json</code>, <code>config.json</code>)에 직접 저장하고 즉시 자료갱신을 실행하려면 GitHub Personal Access Token(Classic <code>repo</code>, <code>workflow</code> 권한)을 입력해 주세요.
       </p>
+      <div style="margin-bottom:12px;padding:8px 10px;background:#eff6ff;border-radius:8px;font-size:12px;color:#1e40af;line-height:1.5;">
+        💡 <strong>중요 팁:</strong> 토큰 발급 화면에서 <strong>Expiration(유효기간)</strong>을 <strong><code>No expiration</code> (만료 없음)</strong>으로 선택하시면 7일/30일 뒤 토큰이 만료되어 저장이 안 되는 문제를 영구히 방지할 수 있습니다.
+      </div>
       <div style="margin-bottom:12px;">
-        <a href="https://github.com/settings/tokens/new?description=MBKmonitoring-Dashboard&scopes=repo,workflow" target="_blank" style="font-size:12px;color:#2563eb;font-weight:600;">
-          👉 여기를 눌러 GitHub 토큰 10초 만에 발급받기 (하단 Generate token 클릭)
+        <a href="https://github.com/settings/tokens/new?description=MBKmonitoring-Dashboard&scopes=repo,workflow" target="_blank" style="font-size:12.5px;color:#2563eb;font-weight:700;">
+          👉 여기를 눌러 GitHub 토큰 10초 만에 발급받기 (Expiration: No expiration 선택 후 하단 Generate token 클릭)
         </a>
       </div>
       <input type="password" id="tokenInput" placeholder="ghp_... 토큰 붙여넣기" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;margin-bottom:14px;" />
@@ -1102,6 +1106,11 @@
       localStorage.setItem("mbk_local_custom_sites", JSON.stringify(serverData.custom_sites));
     }
 
+    // 파일별 최신 SHA 및 객체 메모리 캐시 (연속 저장 시 GitHub API 읽기 복제본 지연으로 인한 409 Conflict 방지)
+    const lastKnownShaMap = {};
+    const lastKnownObjMap = {};
+    const lastPutTimeMap = {};
+
     function scheduleGitHubSync(configChanged = false, silent = true) {
       if (configChanged) hasConfigChanges = true;
       if (!localStorage.getItem("mbk_github_token")) {
@@ -1111,7 +1120,7 @@
       syncDebounceTimer = setTimeout(() => {
         syncDebounceTimer = null;
         syncToGitHub(silent);
-      }, 350);
+      }, 1100);
     }
 
     function toggleFavorite(id) {
@@ -1246,6 +1255,7 @@
 
       // GitHub 토큰이 설정된 경우 GitHub Pages CDN 지연(최대 5~10분)을 우회하여 GitHub API에서 최신 목록 즉시 병합
       const ghToken = localStorage.getItem("mbk_github_token");
+      let tokenExpiredOnLoad = false;
       if (ghToken) {
         try {
           const apiUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/docs/data.json?t=${Date.now()}`;
@@ -1253,10 +1263,16 @@
             cache: "no-store",
             headers: { "Authorization": `Bearer ${ghToken}`, "Accept": "application/vnd.github+json" }
           });
-          if (apiRes.ok) {
+          if (apiRes.status === 401) {
+            tokenExpiredOnLoad = true;
+          } else if (apiRes.ok) {
             const apiFile = await apiRes.json();
+            if (apiFile && apiFile.sha) {
+              lastKnownShaMap["docs/data.json"] = apiFile.sha;
+            }
             if (apiFile && apiFile.content) {
               const apiJson = JSON.parse(base64ToUtf8(apiFile.content));
+              lastKnownObjMap["docs/data.json"] = apiJson;
               if (apiJson.updated_at && (!serverData.updated_at || apiJson.updated_at >= serverData.updated_at)) {
                 serverData.updated_at = apiJson.updated_at;
               }
@@ -1331,13 +1347,18 @@
       // 만약 로컬에서 삭제했던 항목이 서버(data.json)에 아직 반영되어 있지 않다면 자동 동기화 또는 배너 표시
       const hasUnsyncedDeletions = serverData.deleted_ids.some(id => !serverDeletedIdsFromJson.has(id));
       if (hasUnsyncedDeletions) {
-        if (ghToken) {
+        if (ghToken && !tokenExpiredOnLoad) {
           scheduleGitHubSync(false, true);
         } else {
           hasUnsavedChanges = true;
           document.getElementById("unsavedBanner").style.display = "flex";
           document.getElementById("syncBtn").style.display = "inline-flex";
+          if (tokenExpiredOnLoad) {
+            openTokenModal("⚠️ 이전에 입력한 GitHub 연동 토큰의 유효기간이 만료되었거나 유효하지 않습니다(오류 401). 아래 링크를 눌러 새 토큰(Expiration: No expiration 권장)을 발급받아 입력하시면 삭제한 내역이 즉시 서버에 저장됩니다.");
+          }
         }
+      } else if (tokenExpiredOnLoad) {
+        openTokenModal("⚠️ 이전에 입력한 GitHub 연동 토큰의 유효기간이 만료되었습니다(오류 401). 아래 링크에서 새 토큰(Expiration: No expiration)을 발급받아 등록해 주세요.");
       }
 
       // 저장된 검색기간 프리셋 복원
@@ -2354,7 +2375,17 @@ ${contextText}
       }
     }
 
-    function openTokenModal() {
+    function openTokenModal(alertMsg = "") {
+      const alertEl = document.getElementById("tokenModalAlert");
+      if (alertEl) {
+        if (alertMsg) {
+          alertEl.style.display = "block";
+          alertEl.textContent = alertMsg;
+        } else {
+          alertEl.style.display = "none";
+          alertEl.textContent = "";
+        }
+      }
       document.getElementById("tokenInput").value = localStorage.getItem("mbk_github_token") || "";
       document.getElementById("tokenModal").style.display = "flex";
     }
@@ -2367,7 +2398,7 @@ ${contextText}
         localStorage.setItem("mbk_github_token", val);
         closeTokenModal();
         showToast("✅ GitHub 연동 토큰이 저장되었습니다. 이제 변경사항이 서버에 즉시 반영됩니다.");
-        if (hasUnsavedChanges) syncToGitHub();
+        syncToGitHub(false);
       }
     }
 
@@ -2381,24 +2412,49 @@ ${contextText}
     async function updateGitHubFile(path, newContentObj, token, message) {
       const baseUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}`;
       let lastErr = null;
+      const maxAttempts = 5;
 
-      for (let attempt = 1; attempt <= 3; attempt++) {
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-          // cache: "no-store" 및 타임스탬프 파라미터로 브라우저의 60초 sha 캐시로 인한 409 Conflict 원천 차단
-          const getRes = await fetch(`${baseUrl}?t=${Date.now()}`, {
-            cache: "no-store",
-            headers: {
-              "Authorization": `Bearer ${token}`,
-              "Accept": "application/vnd.github+json"
-            }
-          });
           let sha = undefined;
           let existingObj = {};
-          if (getRes.ok) {
-            const fileData = await getRes.json();
-            sha = fileData.sha;
-            try { existingObj = JSON.parse(base64ToUtf8(fileData.content)); } catch (e) {}
+          const recentPutAge = Date.now() - (lastPutTimeMap[path] || 0);
+
+          // 직전 PUT 완료 후 6초 이내이고 attempt === 1이면 GitHub 읽기 복제본 지연(stale SHA)을 피하기 위해 방금 반환받은 SHA를 우선 사용
+          if (attempt === 1 && lastKnownShaMap[path] && lastKnownObjMap[path] && recentPutAge < 6000) {
+            sha = lastKnownShaMap[path];
+            existingObj = lastKnownObjMap[path];
+          } else {
+            const getRes = await fetch(`${baseUrl}?t=${Date.now()}_${attempt}`, {
+              cache: "no-store",
+              headers: {
+                "Authorization": `Bearer ${token}`,
+                "Accept": "application/vnd.github+json"
+              }
+            });
+            if (getRes.status === 401 || getRes.status === 403) {
+              let ghMsg = "";
+              try { const errJson = await getRes.json(); ghMsg = errJson.message || ""; } catch (e) {}
+              const authErr = new Error(`GitHub 인증 오류 (${getRes.status})`);
+              authErr.status = getRes.status;
+              authErr.ghMessage = ghMsg;
+              throw authErr;
+            }
+            if (getRes.ok) {
+              const fileData = await getRes.json();
+              sha = fileData.sha || lastKnownShaMap[path];
+              if (fileData.content) {
+                try { existingObj = JSON.parse(base64ToUtf8(fileData.content)); } catch (e) {}
+              } else if (lastKnownObjMap[path]) {
+                existingObj = lastKnownObjMap[path];
+              }
+              if (sha) lastKnownShaMap[path] = sha;
+            } else if (lastKnownShaMap[path]) {
+              sha = lastKnownShaMap[path];
+              existingObj = lastKnownObjMap[path] || {};
+            }
           }
+
           const finalObj = typeof newContentObj === "function" ? newContentObj(existingObj) : newContentObj;
           const contentStr = JSON.stringify(finalObj, null, 2);
 
@@ -2417,17 +2473,47 @@ ${contextText}
             })
           });
           if (putRes.ok) {
+            try {
+              const putData = await putRes.json();
+              if (putData && putData.content && putData.content.sha) {
+                lastKnownShaMap[path] = putData.content.sha;
+                lastKnownObjMap[path] = finalObj;
+                lastPutTimeMap[path] = Date.now();
+              }
+            } catch (e) {}
             return;
           }
-          if (putRes.status === 409 && attempt < 3) {
-            await new Promise(r => setTimeout(r, 400 * attempt));
+
+          let putErrMsg = "";
+          try { const errJson = await putRes.json(); putErrMsg = errJson.message || ""; } catch (e) {}
+
+          if (putRes.status === 401 || putRes.status === 403) {
+            const authErr = new Error(`GitHub 권한 오류 (${putRes.status})`);
+            authErr.status = putRes.status;
+            authErr.ghMessage = putErrMsg;
+            throw authErr;
+          }
+
+          // 409 Conflict 또는 422 SHA 불일치 시 캐시된 SHA 초기화 후 재시도
+          if ((putRes.status === 409 || putRes.status === 422) && attempt < maxAttempts) {
+            delete lastKnownShaMap[path];
+            lastPutTimeMap[path] = 0;
+            await new Promise(r => setTimeout(r, 800 * attempt));
             continue;
           }
-          throw new Error(`GitHub API 오류 (${putRes.status})`);
+
+          const apiErr = new Error(`GitHub API 오류 (${putRes.status})`);
+          apiErr.status = putRes.status;
+          apiErr.ghMessage = putErrMsg;
+          throw apiErr;
         } catch (err) {
           lastErr = err;
-          if (attempt < 3) {
-            await new Promise(r => setTimeout(r, 400 * attempt));
+          if (err && (err.status === 401 || err.status === 403)) {
+            throw err;
+          }
+          if (attempt < maxAttempts) {
+            delete lastKnownShaMap[path];
+            await new Promise(r => setTimeout(r, 700 * attempt));
           }
         }
       }
@@ -2462,6 +2548,7 @@ ${contextText}
             ...serverData.deleted_ids,
             ...Array.from(userDeletedIds)
           ])).filter(id => !restoredSet.has(id));
+          const mergedDeletedSet = new Set(mergedDeletedIds);
 
           const mergedDeletedTitles = Array.from(new Set([
             ...(existingData.deleted_titles || []),
@@ -2471,7 +2558,14 @@ ${contextText}
           const itemMap = new Map();
           (existingData.items || []).forEach(it => { if (it && it.id) itemMap.set(it.id, it); });
           (serverData.items || []).forEach(it => { if (it && it.id) itemMap.set(it.id, it); });
-          const storedItems = Array.from(itemMap.values()).slice(0, 500);
+
+          // 삭제/만료된 공고는 불필요하게 큰 detail_text를 경량화하여 data.json 용량 폭증(1MB 제한) 및 전송 지연 방지
+          const storedItems = Array.from(itemMap.values()).slice(0, 500).map(it => {
+            if (mergedDeletedSet.has(it.id) && it.detail_text && it.detail_text.length > 400) {
+              return { ...it, detail_text: it.summary || it.detail_text.slice(0, 400) };
+            }
+            return it;
+          });
 
           serverData.deleted_ids = mergedDeletedIds;
 
@@ -2513,12 +2607,20 @@ ${contextText}
         }
       } catch (err) {
         console.error(err);
-        showToast("❌ 서버 저장 실패: GitHub 토큰 권한(repo)을 확인해 주세요.");
+        if (err && err.status === 401) {
+          showToast("🔑 GitHub 토큰 유효기간이 만료되었거나 잘못되었습니다(401). 새 토큰을 등록해 주세요.");
+          openTokenModal("⚠️ 등록된 GitHub 토큰의 유효기간이 만료되었거나 유효하지 않습니다(오류 401). 아래 링크를 눌러 Expiration을 'No expiration(만료 없음)'으로 설정한 뒤 새 토큰을 발급받아 붙여넣어 주세요.");
+        } else if (err && err.status === 403) {
+          showToast("⚠️ GitHub 토큰에 repo 권한이 없습니다(403). 토큰 설정을 확인해 주세요.");
+          openTokenModal("⚠️ 등록된 GitHub 토큰에 저장소 쓰기(repo) 권한이 없습니다(오류 403). 아래 링크에서 repo 및 workflow 권한이 체크된 상태로 새 토큰을 발급받아 주세요.");
+        } else {
+          showToast(`❌ 서버 저장 실패 (${err?.status || "연결 오류"}): 잠시 후 [서버에 저장하기]를 다시 눌러주세요.`);
+        }
       } finally {
         isSyncingToGitHub = false;
         if (pendingSyncRequest) {
           pendingSyncRequest = false;
-          syncToGitHub(true);
+          setTimeout(() => syncToGitHub(true), 600);
         }
       }
     }

@@ -1530,6 +1530,9 @@ def main():
         )
     )
     all_stored_items = all_stored_items[:500]
+    for it in all_stored_items:
+        if it.get("id") in deleted_ids and len(it.get("detail_text", "")) > 400:
+            it["detail_text"] = it.get("summary") or it["detail_text"][:400]
     active_items_list = [item for item in all_stored_items if item.get("id") not in deleted_ids]
     server_db["items"] = all_stored_items
     server_db["deleted_ids"] = list(deleted_ids)
