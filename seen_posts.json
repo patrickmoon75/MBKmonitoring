@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-16T06:48:31.673160",
+  "updated_at": "2026-11-17T04:38:04.355630",
   "seen_ids": [
     "bizinfo_PBLN_000000000127709",
     "bizinfo_PBLN_000000000127721",
@@ -17,7 +17,9 @@
     "bizinfo_PBLN_000000000127819",
     "bizinfo_PBLN_000000000127824",
     "bizinfo_PBLN_000000000127844",
+    "bizinfo_PBLN_000000000127845",
     "bizinfo_PBLN_000000000127850",
+    "bizinfo_PBLN_000000000127851",
     "bizinfo_PBLN_000000000127852",
     "bizinfo_PBLN_000000000127853",
     "bizinfo_PBLN_000000000127859",
@@ -125,6 +127,7 @@
     "kstartup_179800",
     "kstartup_179802",
     "kstartup_179807",
-    "kstartup_179808"
+    "kstartup_179808",
+    "kstartup_179811"
   ]
 }
