@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-27T04:20:43.873964",
+  "updated_at": "2026-11-28T04:00:42.754094",
   "seen_ids": [
     "bizinfo_PBLN_000000000127709",
     "bizinfo_PBLN_000000000127721",
@@ -83,6 +83,12 @@
     "bizinfo_PBLN_000000000128146",
     "bizinfo_PBLN_000000000128147",
     "bizinfo_PBLN_000000000128155",
+    "bizinfo_PBLN_000000000128159",
+    "bizinfo_PBLN_000000000128170",
+    "bizinfo_PBLN_000000000128171",
+    "bizinfo_PBLN_000000000128172",
+    "bizinfo_PBLN_000000000128173",
+    "bizinfo_PBLN_000000000128177",
     "custom_UIPA_2027년지역디지털기업성장지원사업선도기업사업화지원신규지",
     "custom_UIPA_AI모션제어실습장비구매",
     "custom_UIPA_울산주력산업연계AI팩토리및AX확산신규과제발굴기획",
@@ -221,6 +227,8 @@
     "kstartup_179899",
     "kstartup_179904",
     "kstartup_179905",
-    "kstartup_179906"
+    "kstartup_179906",
+    "kstartup_179909",
+    "kstartup_179914"
   ]
 }
